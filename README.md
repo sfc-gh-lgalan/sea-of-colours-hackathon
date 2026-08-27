@@ -27,6 +27,8 @@ they haven't reached yet.
 Python 3.10+. No Snowflake account, no config, no build step.
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python run_web.py
 ```
