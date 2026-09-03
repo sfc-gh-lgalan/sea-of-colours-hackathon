@@ -28,6 +28,8 @@ step (same inputs -> same IDs), so the harness builds it once per night.
 
 from __future__ import annotations
 
+import os
+
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -969,7 +971,7 @@ def build_registry(
     #
     # Registered after _apply_hazard because ordnance has no walk for the
     # hazard sweep to inspect.
-    if weapon_options and agent_view is not None:
+    if _ORDNANCE_ON and weapon_options and agent_view is not None:
         best_alternative = max(
             (ledger.score(o, agent_view).points for o in reg.values()),
             default=0.0,
@@ -1059,6 +1061,12 @@ def _apply_hazard(reg: "OrderedDict[str, Option]", hazard_cells: Collection[Any]
 #: is offered on nights where the board is poor or genuinely contested, and
 #: held on nights where a jackpot is sitting there.
 _WEAPON_EV_SHARE = 0.25
+
+#: Ordnance on the menu at all. A separate switch from the EV gate above, so
+#: "does the rack cost anything when it is never the right play" can be measured
+#: against "is the gate set correctly" — two questions the same flag would
+#: otherwise confound.
+_ORDNANCE_ON = os.environ.get("SAGAR_CURSOR_ORDNANCE", "1") != "0"
 
 _KIND_HEADERS = [
     ("grab", "PRIORITY RED GRABS — ids GRAB* (mass/pure RED you can SEE or reach — the highest-value take, no probe; grab it FIRST)"),

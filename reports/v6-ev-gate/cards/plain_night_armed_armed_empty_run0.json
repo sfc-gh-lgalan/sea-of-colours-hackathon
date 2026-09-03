@@ -1,0 +1,146 @@
+{
+  "battle": "plain_night_armed@armed+empty",
+  "board": {
+    "id": "plain_night_armed",
+    "day": 4,
+    "shape": "NO redsign, no pure \u2014 an ordinary working night, rack loaded",
+    "question": "Day 4 of 7. There is no pure anywhere and no redsign on anybody's board: just a long vein-and-mass seam running north-east, two harvesters, three probes. One rival probe sits at (18,9) with live vision over the near half of our seam, and two rival harvesters are working their own ground at (9,20)/(10,20). Every other board in this suite asks what your agent does about a jackpot. This one asks the question the other 80% of a season actually asks: on an ordinary night, with ordnance in the rack and nothing dramatic to spend it on, does the agent still run a competent seam \u2014 and does it treat the rack as a tool or as decoration?",
+    "canonical": "WORK THE SEAM, PROPERLY. Both harvesters out, both onto RED, long combs up the mass at (16,10)-(18,12), lift both. That is the whole scoring play and it is not sophisticated. \n\nThe ordnance is the interesting part, and BOTH answers are defensible \u2014 which is why nothing here scores it. Firing is justifiable: their probe at (18,9) is the only eye on our seam, an EMP removes it for the night and a chaff can strand the committed pair on their lift. Holding is equally justifiable: a charge spent here is a charge not available the night a pure surfaces, and the hour it costs is an hour not walking ore. What is NOT defensible is never having considered it. Read the ORDNANCE line in the report against your own doctrine \u2014 if you told your agent 'weapons only for redsigns' then silence here is the correct result and you have just proved it; if you did not, silence means the rack is decoration.",
+    "baseline": "V12 works this board competently and has never fired a weapon on it. That is not a bug and not obviously a mistake \u2014 it is the shipped doctrine, which holds charges for redsign nights. It is here as the reference point for a fork that decides otherwise."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": true,
+    "score": 1.0,
+    "seconds": 19.85,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 2 harvester(s) deployed"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "min_red_cells",
+      "passed": true,
+      "detail": "walked 6 RED cell(s), wanted 6"
+    },
+    {
+      "name": "probes_after_harvesters",
+      "passed": true,
+      "detail": "harvesters were away before probes were spent"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "12 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        18,
+        13
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        19,
+        13
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        19,
+        12
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1_2",
+      "at": [
+        16,
+        10
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        17,
+        10
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        17,
+        11
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        11
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        12
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1_2"
+    },
+    {
+      "a": "probe",
+      "at": [
+        22,
+        8
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        21,
+        15
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: HD2T, CH2, PR2, PR3] [predicted=high] [fallback=False] [exec=packager] [sanitized=3] [thinker=aggressive] moves=12"
+}
