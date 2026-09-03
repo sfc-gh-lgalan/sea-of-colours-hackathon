@@ -1,0 +1,11 @@
+{
+  "team": "sagar",
+  "name": "coco",
+  "participants": [
+    "Sagar Morakhia",
+    "Cortex Code"
+  ],
+  "menu_label": "SAGAR_COCO",
+  "entry": "harness:run",
+  "needs_llm": true
+}
