@@ -889,18 +889,14 @@ def build_registry(
             opt = _supersede_option(i, h)
             reg[opt.option_id] = opt
 
-    # RUNG 2b — the offensive play, registered next to the supersedes because
-    # they answer the same question by different means: a supersede blinds ONE
-    # rival eye and costs a probe, a salvo blinds several and costs an hour.
-    # Offering them together is what makes that a choice rather than a default.
-    # Self-suppressing: returns None when the rack is empty, when nothing is
-    # worth hitting, or when every aim point would darken our own ground.
-    emp = _emp_option(agent_view, supersede_hints or ())
-    if emp is not None:
-        reg[emp.option_id] = emp
-    jam = _chaff_option(agent_view)
-    if jam is not None:
-        reg[jam.option_id] = jam
+    # Ordnance is built here but registered LAST (see the end of this function),
+    # because whether it is worth offering depends on what else is on the menu.
+    weapon_options = [
+        opt for opt in (
+            _emp_option(agent_view, supersede_hints or ()),
+            _chaff_option(agent_view),
+        ) if opt is not None
+    ]
 
     # PHASE-1 VALUE PYRAMID — force-surface pure/mass RED the seat can SEE and
     # reach as a top-priority GRAB, regardless of redsign. A HIGH-YIELD BLUE grab
@@ -956,6 +952,34 @@ def build_registry(
                     reg[opt.option_id] = opt
 
     _apply_hazard(reg, hazard_cells)
+
+    # ORDNANCE, registered last and only when it is worth the slot.
+    #
+    # Measured: with the weapon unconditionally on the menu the agent fired 12
+    # times and the suite score fell about a point, because on most nights the
+    # ledger priced the shot at ~+38 against a grab worth ~+1425. Spending an
+    # hour for a fortieth of the value is a bad trade, and an option nobody
+    # should pick still costs real estate on an 800-token plan call.
+    #
+    # So let the ledger decide. A charge is offered when it is genuinely
+    # competitive with the best thing the seat could otherwise do, and held
+    # otherwise — which is exactly what the doctrine already argues, now
+    # enforced by arithmetic instead of hoped for in prose. A charge held on
+    # purpose is a real play, not a failure to fire.
+    #
+    # Registered after _apply_hazard because ordnance has no walk for the
+    # hazard sweep to inspect.
+    if weapon_options and agent_view is not None:
+        best_alternative = max(
+            (ledger.score(o, agent_view).points for o in reg.values()),
+            default=0.0,
+        )
+        floor = best_alternative * _WEAPON_EV_SHARE
+        for opt in weapon_options:
+            value = ledger.score(opt, agent_view).points
+            if value > 0 and value >= floor:
+                reg[opt.option_id] = opt
+
     return reg
 
 
@@ -1027,6 +1051,15 @@ def _apply_hazard(reg: "OrderedDict[str, Option]", hazard_cells: Collection[Any]
 
 
 # ── menu render (for the thinker prompt) ────────────────────────────────
+#: How much of the best alternative a charge must be worth before it is offered.
+#: A salvo costs one of 21 hours and no harvester, so it does not have to beat
+#: the best play outright — but it does have to be the same order of magnitude,
+#: or the hour is better spent mining. Tuned from the measured gap between a
+#: priced chaff (~+38) and a priced pure grab (~+1425): at a quarter, the shot
+#: is offered on nights where the board is poor or genuinely contested, and
+#: held on nights where a jackpot is sitting there.
+_WEAPON_EV_SHARE = 0.25
+
 _KIND_HEADERS = [
     ("grab", "PRIORITY RED GRABS — ids GRAB* (mass/pure RED you can SEE or reach — the highest-value take, no probe; grab it FIRST)"),
     ("seam", "REDSIGN PATTERNS (multi-wave campaigns — pick & order by case)"),

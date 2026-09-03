@@ -1,0 +1,116 @@
+{
+  "battle": "no_probes_two_units@armed+empty",
+  "board": {
+    "id": "no_probes_two_units",
+    "day": 3,
+    "shape": "own redsign, early, one opponent, ZERO probes",
+    "question": "Day 3 of 7. Our pure is LIVE at (31,18) with mass at (31,17) and (32,17). A rival seam sits far west at ~(14,22). Two harvesters and ZERO probes in stock. Does it get both units on the board with no vision to buy, and does it go inward (mine our own seam out) or outward (attack theirs)?",
+    "canonical": "Both answers are acceptable and the choice is the interesting part. INWARD: smash the pure with one unit, mine the seam to exhaustion with the other. OUTWARD: take pure plus the two mass with one, send the other at the rival seam. With ONE opponent and NO chaff there is nothing to punish the extra exposure, so outward is slightly preferred \u2014 but a migration to inward here means something has made the agent timid, and that is a regression no per-option check would catch. What must not regress: dropping ON the pure rather than walking to it, and getting both harvesters out while holding zero probes.",
+    "baseline": "V12 played outward and chose well. Zero compiler interventions, both plans intact."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": true,
+    "score": 1.0,
+    "seconds": 18.37,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 2 harvester(s) deployed"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "max_probes",
+      "passed": true,
+      "detail": "spent 0 probe(s) (limit 0)"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "8 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        31,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        31,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        32,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        32,
+        18
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1_2",
+      "at": [
+        30,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        30,
+        19
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1_2"
+    }
+  ],
+  "rationale": "[plan=aggressive: GRAB1, WALK_TO_CONTEST_FAR] [predicted=high] [fallback=False] [exec=packager] [sanitized=5] [thinker=aggressive] moves=8"
+}

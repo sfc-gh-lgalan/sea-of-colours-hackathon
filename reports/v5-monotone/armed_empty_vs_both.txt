@@ -3,9 +3,9 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
   FAIL early_solo_seam@armed+both                      80%
   ~    no_probes_two_units@armed+empty                 93%
   ~    no_probes_two_units@armed+both                  93%
-  ok   echo_pure_blind_rival@armed+empty              100%
-  ok   echo_pure_blind_rival@armed+both               100%
-  FAIL two_pures_poker@armed+empty                     86%
+  ~    echo_pure_blind_rival@armed+empty               93%
+  ~    echo_pure_blind_rival@armed+both                93%
+  ~    two_pures_poker@armed+empty                     90%
   FAIL two_pures_poker@armed+both                      86%
   ok   race_the_watched_pure@armed+empty              100%
   ok   race_the_watched_pure@armed+both               100%
@@ -15,17 +15,17 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
   FAIL blind_grab_rival_seam@armed+both                80%
   FAIL crowded_echo_seam@armed+empty                   89%
   FAIL crowded_echo_seam@armed+both                    89%
-  ok   final_night_ring@armed+empty                   100%
-  ~    final_night_ring@armed+both                     90%
-  FAIL plain_night_armed@armed+empty                   80%
+  ~    final_night_ring@armed+empty                    95%
+  ok   final_night_ring@armed+both                    100%
+  FAIL plain_night_armed@armed+empty                   73%
   FAIL plain_night_armed@armed+both                    80%
 
 ══════════════════════════════════════════════════════════════════════════
   REDSIGN BATTLES · sagar_cursor
 ══════════════════════════════════════════════════════════════════════════
 
-  score   ████████████████░·  91%
-  clean   7/20 battles passed every run
+  score   ████████████████░·  90%
+  clean   5/20 battles passed every run
 
 
 ──────────────────────────────────────────────────────────────────────────
@@ -34,20 +34,20 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
 
     6x  denial_probe
         e.g. no probe landed on a rival eye. Their finders are at (20,3);
-             probes went to (21,3), (19,4), (31,20). Blinding the finder is
+             probes went to (21,3), (20,4), (23,21). Blinding the finder is
              the premise of this attack
-    6x  max_steps_past_pure
-        e.g. harvester_p1_2 took 2 steps after banking the pure, limit is
-             0. On this board those hours are exposure paid for with a
-             jackpot already in the hold
     6x  min_red_cells
-        e.g. only 5 RED cell(s) walked, wanted 6. There is no pure on this
+        e.g. only 4 RED cell(s) walked, wanted 6. There is no pure on this
              board and nothing to contest — the whole night is the seam, so
              a short outing is not caution, it is just less ore
     6x  no_green
         e.g. stepped on ground a rival already stripped: harvester_p1_2 at
              (17,7). That is synthetic green — it scores nothing and costs
              100 per parcel
+    5x  max_steps_past_pure
+        e.g. harvester_p1_2 took 2 steps after banking the pure, limit is
+             0. On this board those hours are exposure paid for with a
+             jackpot already in the hold
     5x  min_steps_past_pure
         e.g. stopped 0 step(s) past the pure and wanted at least 3. Nothing
              on this board can punish the extra hours, so the extension is
@@ -57,31 +57,60 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
   ORDNANCE
 ──────────────────────────────────────────────────────────────────────────
 
-  Fired 12x chaff flare across 10 armed battles.
-  Armed 90% vs unarmed 91% — no measurable gain from being armed yet.
+  Fired 13x chaff flare across 10 armed battles.
+  Armed 90% vs unarmed 90% — no measurable gain from being armed yet.
 
   per battle:
     1 fired   early_solo_seam@armed+both
-    1 fired   no_probes_two_units@armed+both
-    1 fired   echo_pure_blind_rival@armed+both
+    2 fired   no_probes_two_units@armed+both
+    2 fired   echo_pure_blind_rival@armed+both
     2 fired   two_pures_poker@armed+both
-    silent    race_the_watched_pure@armed+both
-    2 fired   three_pures_one_unit@armed+both
+    1 fired   race_the_watched_pure@armed+both
+    silent    three_pures_one_unit@armed+both
     3 fired   blind_grab_rival_seam@armed+both
-    2 fired   crowded_echo_seam@armed+both
-    silent    final_night_ring@armed+both
+    1 fired   crowded_echo_seam@armed+both
+    1 fired   final_night_ring@armed+both
     silent    plain_night_armed@armed+both
 
 ──────────────────────────────────────────────────────────────────────────
   WHAT TO FIX FIRST
 ──────────────────────────────────────────────────────────────────────────
 
+  [FAIL] plain_night_armed@armed+empty  0/3 runs, 73% of checks
+     NO redsign, no pure — an ordinary working night, rack loaded
+
+     x3 min_red_cells
+        only 4 RED cell(s) walked, wanted 6. There is no pure on this
+        board and nothing to contest — the whole night is the seam, so
+        a short outing is not caution, it is just less ore
+     x1 probes_after_harvesters
+        1 probes were queued ahead of the last harvester drop and only
+        0 is justified here. On a tempo-critical night the rest are
+        hours handed to whoever else wants the pure
+
+     The canonical: WORK THE SEAM, PROPERLY. Both harvesters out, both onto RED,
+     long combs up the mass at (16,10)-(18,12), lift both. That is
+     the whole scoring play and it is not sophisticated. The
+     ordnance is the interesting part, and BOTH answers are
+     defensible — which is why nothing here scores it. Firing is
+     justifiable: their probe at (18,9) is the only eye on our
+     seam, an EMP removes it for the night and a chaff can strand
+     the committed pair on their lift. Holding is equally
+     justifiable: a charge spent here is a charge not available the
+     night a pure surfaces, and the hour it costs is an hour not
+     walking ore. What is NOT defensible is never having considered
+     it. Read the ORDNANCE line in the report against your own
+     doctrine — if you told your agent 'weapons only for redsigns'
+     then silence here is the correct result and you have just
+     proved it; if you did not, silence means the rack is
+     decoration.
+
   [FAIL] blind_grab_rival_seam@armed+empty  0/3 runs, 80% of checks
      RIVAL redsign, pures fogged, late, one opponent
 
      x3 denial_probe
         no probe landed on a rival eye. Their finders are at (20,3);
-        probes went to (21,3), (19,4), (31,20). Blinding the finder is
+        probes went to (21,3), (20,4), (23,21). Blinding the finder is
         the premise of this attack
 
      The canonical: Blind ON the finder at (20,3) — that is the premise of the
@@ -98,7 +127,7 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
 
      x3 denial_probe
         no probe landed on a rival eye. Their finders are at (20,3);
-        probes went to (21,3), (20,4), (18,5), (16,4). Blinding the
+        probes went to (21,3), (18,5), (16,4), (20,4). Blinding the
         finder is the premise of this attack
 
      The canonical: Blind ON the finder at (20,3) — that is the premise of the
@@ -110,20 +139,4 @@ running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cu
      finder being blinded, never a fixed cell: the pure is
      invisible, so a canonical that names one is cheating.
 
-  [FAIL] early_solo_seam@armed+both  0/3 runs, 80% of checks
-     own redsign, day 2, one opponent, nothing watching
-
-     x3 min_steps_past_pure
-        stopped 0 step(s) past the pure and wanted at least 3. Nothing
-        on this board can punish the extra hours, so the extension is
-        nearly free and stopping short is the failure
-
-     The canonical: TAKE EVERYTHING. Nothing on this board justifies a short
-     chain. Drop ON the pure at (15,22) — landing auto-harvests it
-     — then walk the mass at (15,23) and (14,23) and push into the
-     fog around the seam. On a one-harvester night the sweep must
-     open on the pure. A pure-only grab is the correct play under
-     danger and the wrong play here: the extension is nearly free,
-     so stopping short is the failure, not the safe choice.
-
-  cards written to reports/v4-labels-only/cards/
+  cards written to reports/v5-monotone/cards/
