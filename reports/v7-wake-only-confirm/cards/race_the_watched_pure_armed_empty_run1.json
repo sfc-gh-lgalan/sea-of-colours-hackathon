@@ -1,0 +1,140 @@
+{
+  "battle": "race_the_watched_pure@armed+empty",
+  "board": {
+    "id": "race_the_watched_pure",
+    "day": 5,
+    "shape": "own echo pure inside a rival probe disk, sign two nights old",
+    "question": "Our pure at (31,18) is known by ECHO only and sits INSIDE the rival's probe disk at (32,17) \u2014 they can land on it an hour before we can. A rival sign at ~(17,6) is also two nights old with two of their probes on it and none of ours. Two harvesters, four probes. Does it win the race, and does it route the second harvester somewhere the first has not been?",
+    "canonical": "Take the shortest line to the pure that exists and accept you may arrive to a stripped cell \u2014 tempo is the whole board. Then INVERT THE RING for the second unit: drop ON (32,17), which auto-harvests the mass AND crushes their finder probe in the same move at hour one, then walk OUTWARD away from the first unit's wake. Value and denial both banked before anything can go wrong. Walking the ring the other way crosses two cells the first unit already stripped \u2014 two synthetic greens eaten at -100 each to reach a pure already in the hold. Passing on the rival seam is correct: a two-night-old sign with two of their probes on it has almost certainly been banked already.",
+    "baseline": "V12 picked the right shape but the offered ring ran backwards through its own wake, and the compiler spent two held probes on stacked cells two apart."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": true,
+    "score": 1.0,
+    "seconds": 20.68,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 2 harvester(s) deployed"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "12 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        31,
+        18
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1_2",
+      "at": [
+        31,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        32,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        32,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        32,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        32,
+        16
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        31,
+        16
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1_2"
+    },
+    {
+      "a": "probe",
+      "at": [
+        26,
+        14
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        27,
+        12
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        29,
+        13
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: SEEN_GRAB, WALK_TO_CONTEST, PR1, PR2, PR3, PR4] [predicted=high] [fallback=False] [exec=packager] [thinker=aggressive] moves=12"
+}

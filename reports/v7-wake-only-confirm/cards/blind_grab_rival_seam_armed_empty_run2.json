@@ -1,0 +1,108 @@
+{
+  "battle": "blind_grab_rival_seam@armed+empty",
+  "board": {
+    "id": "blind_grab_rival_seam",
+    "day": 6,
+    "shape": "RIVAL redsign, pures fogged, late, one opponent",
+    "question": "A rival redsign beacon at ~(18,3) with their finder probe at (20,3). The pures are NOT visible to us \u2014 we know a jackpot is in there and roughly where, and nothing more. Does it blind the finder, and does the harvester land inside the disk it just opened?",
+    "canonical": "Blind ON the finder at (20,3) \u2014 that is the premise of the move, not a lucky side effect \u2014 then drop the harvester at (19,3) inside the quadrant the blind just opened and comb. Comb length follows rival vision: long if the blind removes all rival sight, short while a second rival probe still watches. Score the comb riding the smear gradient and the finder being blinded, never a fixed cell: the pure is invisible, so a canonical that names one is cheating.",
+    "baseline": "V12 blinded (20,3) correctly, then walked the harvester WEST away from the pures the blind had just uncovered."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": false,
+    "score": 0.8,
+    "seconds": 18.75,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "comb_gradient",
+      "passed": true,
+      "detail": "harvester_p1 combed inward to within 0 of the beacon centre"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "denial_probe",
+      "passed": false,
+      "detail": "no probe landed on a rival eye. Their finders are at (20,3); probes went to (21,3), (17,4), (20,4), (9,17). Blinding the finder is the premise of this attack"
+    },
+    {
+      "name": "max_probes",
+      "passed": true,
+      "detail": "spent 4 probe(s) (limit 4)"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "7 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "probe",
+      "at": [
+        21,
+        3
+      ]
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        18,
+        3
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        17,
+        3
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "probe",
+      "at": [
+        17,
+        4
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        20,
+        4
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        9,
+        17
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: BLIND_AND_GRAB, PR1, PR2, PR3] [predicted=high] [fallback=False] [exec=packager] [thinker=aggressive] moves=7"
+}
