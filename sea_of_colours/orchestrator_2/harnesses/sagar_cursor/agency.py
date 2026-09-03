@@ -38,6 +38,7 @@ from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import comb_shapes
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import option_economics
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import packager
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import scorch
+from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import supersede
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import value_pyramid
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor.seam_control import (
     SeamPattern,
@@ -460,10 +461,18 @@ def _emp_option(
         return None
 
     dials = scorch.specs(agent_view)["emp"]
+    # Enemy probes come from the raw sightings, NOT from ``supersede_hints``.
+    # That list is "capped at spare probe stock" because superseding spends a
+    # probe to land on theirs — a gate that is entirely correct for a supersede
+    # and entirely wrong for a salvo, which spends an hour and a charge and no
+    # probe at all. Sourcing targets from it made the option vanish on exactly
+    # the boards where the seat was out of probes and a salvo was the only
+    # denial left. ``supersede_hints`` is still consulted, but only to enrich
+    # the prose.
     probes = [
-        c for c in (_cell_tuple(h.get("probe_at")) for h in (supersede_hints or [])
-                    if isinstance(h, Mapping))
-        if c is not None
+        cell for cell in (
+            _cell_tuple(row.get("at")) for row in supersede._enemy_probes(agent_view)
+        ) if cell is not None
     ]
     if not probes:
         return None
@@ -484,7 +493,11 @@ def _emp_option(
     if killed <= 0:
         return None
 
-    finder = any(
+    # A finder is the disk lighting a contested pure — the single most valuable
+    # thing to blind, and worth naming on the menu line. Read from the same
+    # stock-independent source, with the hints as a fallback.
+    finder_cells = supersede._redsign_finder_cells(agent_view)
+    finder = bool(finder_cells & set(probes)) or any(
         h.get("is_finder") for h in (supersede_hints or []) if isinstance(h, Mapping)
     )
     shots = " ".join(f"({x},{y})" for x, y in targets)
@@ -520,6 +533,61 @@ def _emp_option(
             "probes_killed": killed,
         },
         rationale=rationale,
+    )
+
+
+def _chaff_option(agent_view: Mapping[str, Any]) -> Optional[Option]:
+    """A chaff flare — the weapon that needs no target, and therefore fires.
+
+    This exists because of a measurement, not a hunch. The EMP option above
+    aims at rival probes, and on the battles suite it can never be offered:
+    the boards place rival probes in engine truth, but the seat's fog-limited
+    view carries no sighting of them at plan time (``competitor_intel`` empty,
+    no echoes, ``_enemy_probes() == []``). A weapon you cannot aim is a weapon
+    you cannot fire, however many rungs are built above it.
+
+    Chaff has no aim point. It blankets the board, cancels every OTHER seat's
+    action for its duration, and passes your own units through untouched. So on
+    exactly the nights where blindness rules out a salvo, chaff is still a legal,
+    reasoned play — and it buys the one thing a contested jackpot night is
+    actually short of, which is TEMPO.
+    """
+    held = scorch.stock(agent_view)
+    if held.get("chaff", 0) <= 0:
+        return None
+
+    dials = scorch.specs(agent_view)["chaff"]
+    hours = dials["hours"]
+    contested = bool(agent_view.get("redsign"))
+    if not contested:
+        # Nothing to race for. Cancelling a quiet night's actions buys nothing
+        # and costs an hour, so the option stays off the menu rather than
+        # tempting the seat into spending a charge for the sake of it.
+        return None
+
+    return Option(
+        option_id="JAM",
+        kind="weapon",
+        title=f"Chaff flare — freeze every rival for {hours}h",
+        detail=(
+            f"cancels EVERY other seat's action for {hours}h board-wide; your "
+            f"own units act normally through it"
+        ),
+        execute_lines=["JAM: chaff_flare"],
+        payload={"verb": "chaff_flare"},
+        rationale=(
+            f"Buys TEMPO on a contested jackpot, which is the currency this "
+            f"board is short of. A public redsign means they are racing you for "
+            f"the same cell; {hours}h of cancelled rival actions is {hours}h in "
+            f"which only you can move — long enough to land ON the pure and lift "
+            f"it before anyone contests. Needs no target and no vision, so it is "
+            f"the one strike available when you cannot see their probes. "
+            f"Fire it EARLY: it is worth its hour at hour 1, and close to "
+            f"nothing once the landings are done. "
+            f"The BLUE was spent in orbit and is sunk; the cost now is one of "
+            f"your 21 hours, weighed against the chain that hour would have "
+            f"banked."
+        ),
     )
 
 
@@ -829,6 +897,9 @@ def build_registry(
     emp = _emp_option(agent_view, supersede_hints or ())
     if emp is not None:
         reg[emp.option_id] = emp
+    jam = _chaff_option(agent_view)
+    if jam is not None:
+        reg[jam.option_id] = jam
 
     # PHASE-1 VALUE PYRAMID — force-surface pure/mass RED the seat can SEE and
     # reach as a top-priority GRAB, regardless of redsign. A HIGH-YIELD BLUE grab

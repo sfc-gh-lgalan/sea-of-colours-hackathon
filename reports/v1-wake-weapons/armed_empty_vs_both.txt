@@ -1,0 +1,123 @@
+running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cursor
+  FAIL early_solo_seam@armed+empty                     80%
+  FAIL early_solo_seam@armed+both                      80%
+  ok   no_probes_two_units@armed+empty                100%
+  ok   no_probes_two_units@armed+both                 100%
+  ok   echo_pure_blind_rival@armed+empty              100%
+  ok   echo_pure_blind_rival@armed+both               100%
+  ~    two_pures_poker@armed+empty                     90%
+  FAIL two_pures_poker@armed+both                      86%
+  ok   race_the_watched_pure@armed+empty              100%
+  ok   race_the_watched_pure@armed+both               100%
+  ok   three_pures_one_unit@armed+empty               100%
+  ok   three_pures_one_unit@armed+both                100%
+  FAIL blind_grab_rival_seam@armed+empty               80%
+  FAIL blind_grab_rival_seam@armed+both                80%
+  FAIL crowded_echo_seam@armed+empty                   89%
+  FAIL crowded_echo_seam@armed+both                    89%
+  ok   final_night_ring@armed+empty                   100%
+  ok   final_night_ring@armed+both                    100%
+  FAIL plain_night_armed@armed+empty                   80%
+  FAIL plain_night_armed@armed+both                    80%
+
+══════════════════════════════════════════════════════════════════════════
+  REDSIGN BATTLES · sagar_cursor
+══════════════════════════════════════════════════════════════════════════
+
+  score   ████████████████▒·  92%
+  clean   10/20 battles passed every run
+
+
+──────────────────────────────────────────────────────────────────────────
+  WHAT WENT WRONG, BY FREQUENCY
+──────────────────────────────────────────────────────────────────────────
+
+    6x  denial_probe
+        e.g. no probe landed on a rival eye. Their finders are at (20,3);
+             probes went to (21,3), (19,5), (16,5), (17,1). Blinding the
+             finder is the premise of this attack
+    6x  min_red_cells
+        e.g. only 5 RED cell(s) walked, wanted 6. There is no pure on this
+             board and nothing to contest — the whole night is the seam, so
+             a short outing is not caution, it is just less ore
+    6x  min_steps_past_pure
+        e.g. stopped 0 step(s) past the pure and wanted at least 3. Nothing
+             on this board can punish the extra hours, so the extension is
+             nearly free and stopping short is the failure
+    6x  no_green
+        e.g. stepped on ground a rival already stripped: harvester_p1_2 at
+             (17,7). That is synthetic green — it scores nothing and costs
+             100 per parcel
+    5x  max_steps_past_pure
+        e.g. harvester_p1 took 2 steps after banking the pure, limit is 0.
+             On this board those hours are exposure paid for with a jackpot
+             already in the hold
+
+──────────────────────────────────────────────────────────────────────────
+  ORDNANCE
+──────────────────────────────────────────────────────────────────────────
+
+  Nothing fired across 10 armed battles.
+  The rack was full and the plan never changed.
+
+  Whether that is wrong is your call, not the suite's:
+  a charge held for a jackpot night is a real doctrine.
+  But if you did NOT choose silence, the rack is
+  decoration — run `soc weapons --agent <you>` to see
+  which rung it is stuck on.
+
+──────────────────────────────────────────────────────────────────────────
+  WHAT TO FIX FIRST
+──────────────────────────────────────────────────────────────────────────
+
+  [FAIL] blind_grab_rival_seam@armed+empty  0/3 runs, 80% of checks
+     RIVAL redsign, pures fogged, late, one opponent
+
+     x3 denial_probe
+        no probe landed on a rival eye. Their finders are at (20,3);
+        probes went to (21,3), (19,5), (16,5), (17,1). Blinding the
+        finder is the premise of this attack
+
+     The canonical: Blind ON the finder at (20,3) — that is the premise of the
+     move, not a lucky side effect — then drop the harvester at
+     (19,3) inside the quadrant the blind just opened and comb.
+     Comb length follows rival vision: long if the blind removes
+     all rival sight, short while a second rival probe still
+     watches. Score the comb riding the smear gradient and the
+     finder being blinded, never a fixed cell: the pure is
+     invisible, so a canonical that names one is cheating.
+
+  [FAIL] blind_grab_rival_seam@armed+both  0/3 runs, 80% of checks
+     RIVAL redsign, pures fogged, late, one opponent
+
+     x3 denial_probe
+        no probe landed on a rival eye. Their finders are at (20,3);
+        probes went to (21,3), (31,20), (16,5), (19,4). Blinding the
+        finder is the premise of this attack
+
+     The canonical: Blind ON the finder at (20,3) — that is the premise of the
+     move, not a lucky side effect — then drop the harvester at
+     (19,3) inside the quadrant the blind just opened and comb.
+     Comb length follows rival vision: long if the blind removes
+     all rival sight, short while a second rival probe still
+     watches. Score the comb riding the smear gradient and the
+     finder being blinded, never a fixed cell: the pure is
+     invisible, so a canonical that names one is cheating.
+
+  [FAIL] early_solo_seam@armed+empty  0/3 runs, 80% of checks
+     own redsign, day 2, one opponent, nothing watching
+
+     x3 min_steps_past_pure
+        stopped 0 step(s) past the pure and wanted at least 3. Nothing
+        on this board can punish the extra hours, so the extension is
+        nearly free and stopping short is the failure
+
+     The canonical: TAKE EVERYTHING. Nothing on this board justifies a short
+     chain. Drop ON the pure at (15,22) — landing auto-harvests it
+     — then walk the mass at (15,23) and (14,23) and push into the
+     fog around the seam. On a one-harvester night the sweep must
+     open on the pure. A pure-only grab is the correct play under
+     danger and the wrong play here: the extension is nearly free,
+     so stopping short is the failure, not the safe choice.
+
+  cards written to reports/v1-wake-weapons/cards/

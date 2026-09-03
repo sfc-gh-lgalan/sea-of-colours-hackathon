@@ -965,6 +965,16 @@ def _pack_emp(pk: "_Packer", payload: Mapping[str, Any]) -> None:
       itself to Aurora. The salvo is therefore hoisted to the front of the
       queue rather than landing wherever the plan happened to name it.
     """
+    if str(payload.get("verb") or "") == "chaff_flare":
+        # Targetless by nature: it blankets the board. Same tempo argument as a
+        # salvo, so it takes the same hour-1 slot.
+        pk.moves.insert(0, {"a": "chaff_flare"})
+        pk.log.append(
+            "chaff_flare hoisted to hour 1 — every rival action cancelled for "
+            "its duration; our own units pass through untouched"
+        )
+        return
+
     targets = [
         cell for cell in (_cell(t) for t in (payload.get("targets") or []))
         if cell is not None
