@@ -1,0 +1,212 @@
+{
+  "battle": "crowded_echo_seam@armed+empty",
+  "board": {
+    "id": "crowded_echo_seam",
+    "day": 6,
+    "shape": "own echo pure, three opponents, five rival probes, no vision",
+    "question": "Day 6 of 7, four seats. Our pure at (16,6) is ECHO \u2014 two nights stale and fogged, so it needs a hot-drop probe to light before we can land. FIVE rival probes cover the seam and we have none on it. Only one enemy disk actually reaches the pure, but theirs is a deterministic hour-one grab and ours is contingent at hour two. Does the second harvester stay on the seam?",
+    "canonical": "WE GO ANYWAY \u2014 this is the commitment floor. Conceding costs the same as trying and wins nothing; if they fumble, it is the season. Tempo SIZES the commitment, it never cancels it. Probe (19,6) at hour one to light the cell \u2014 placed OFF the pure so it survives the landing and its disk makes the second wave legal off the same shot \u2014 drop ON (16,6) at hour two, lift at three. Second unit takes the mass DOWN THE COLUMN at (16,7) and (16,8). NOT (17,7)/(17,8): a rival stripped those last night and they are synthetic green now, -100 each. NOT a repeat of the pure: there is no chaff on this board and chaff is the only thing that denies an hour-one landing, so a second pass insures against nothing and just pays green. Probes AFTER the harvesters are away.",
+    "baseline": "V12 banked the pure, then the packager DELETED its second run ('cell already has a drop') and the corrector dumped that harvester twenty cells away. The agent had diagnosed the defect in its own reasoning and had no way to express the fix."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": false,
+    "score": 0.889,
+    "seconds": 15.71,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (16,6)"
+    },
+    {
+      "name": "pure_first",
+      "passed": true,
+      "detail": "landed directly on the pure at (16,6)"
+    },
+    {
+      "name": "no_green",
+      "passed": false,
+      "detail": "stepped on ground a rival already stripped: harvester_p1_2 at (17,7). That is synthetic green \u2014 it scores nothing and costs 100 per parcel"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "no_repeat_pure",
+      "passed": true,
+      "detail": "the pure was taken once"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 2 harvester(s) deployed"
+    },
+    {
+      "name": "seam_commitment",
+      "passed": true,
+      "detail": "2 unit(s) committed to the seam"
+    },
+    {
+      "name": "probes_after_harvesters",
+      "passed": true,
+      "detail": "one probe went in ahead of the drops to light the echo pure, the rest waited for the harvesters"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "18 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "probe",
+      "at": [
+        19,
+        6
+      ]
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        16,
+        6
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        17,
+        6
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        17,
+        5
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        16,
+        5
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        16,
+        4
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        17,
+        4
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1_2",
+      "at": [
+        16,
+        7
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        17,
+        7
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        7
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        6
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        5
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        18,
+        4
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1_2"
+    },
+    {
+      "a": "probe",
+      "at": [
+        14,
+        5
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        18,
+        4
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        15,
+        7
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: BLIND_AND_GRAB, UNBEATEN_FLANK, PR1, PR2, PR3] [predicted=high] [fallback=False] [exec=packager] [thinker=aggressive] moves=18"
+}

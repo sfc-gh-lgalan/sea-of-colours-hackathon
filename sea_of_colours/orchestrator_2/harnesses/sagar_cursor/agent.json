@@ -1,0 +1,10 @@
+{
+  "team": "sagar",
+  "name": "cursor",
+  "participants": [
+    "Sagar Morakhia"
+  ],
+  "menu_label": "SAGAR_CURSOR \u2014 sagar's agent (needs a Snowflake PAT \u00b7 slow)",
+  "entry": "harness:run",
+  "needs_llm": true
+}
