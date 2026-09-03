@@ -129,13 +129,41 @@ def _steps_avoiding(
     primary = _steps_between(a, b)
     if not wake or not any(step in wake for step in primary):
         return primary, False
-    alternate = _steps_between_y_first(a, b)
-    hits_primary = sum(1 for step in primary if step in wake)
-    hits_alternate = sum(1 for step in alternate if step in wake)
-    if hits_alternate < hits_primary:
-        return alternate, True
-    # Neither L clears it: the destination itself is usually the wake cell. Keep
-    # the original and let the caller price it, exactly as before.
+
+    # Search every MONOTONE route from a to b — each step moves toward b in x or
+    # in y, so every candidate has exactly the same Manhattan length as the
+    # direct one. That constraint is the whole point: a harvester gets five
+    # steps a night, so a "detour" that adds hours would quietly shorten the
+    # walk somewhere else. Same length, same destination, different corners.
+    #
+    # The two L-shapes are just the extreme members of this family. Searching
+    # the whole staircase is what fixes the case where BOTH Ls are dirty, which
+    # is what put three collisions back on the board when EV ordering changed
+    # which options get combined.
+    step_x = 1 if b[0] > a[0] else -1
+    step_y = 1 if b[1] > a[1] else -1
+    frontier: List[Tuple[Tuple[int, int], List[Tuple[int, int]]]] = [(a, [])]
+    seen: Set[Tuple[int, int]] = {a}
+    while frontier:
+        cell, path = frontier.pop(0)
+        if cell == b:
+            return path, path != primary
+        for nxt in (
+            (cell[0] + step_x, cell[1]) if cell[0] != b[0] else None,
+            (cell[0], cell[1] + step_y) if cell[1] != b[1] else None,
+        ):
+            if nxt is None or nxt in seen:
+                continue
+            # The destination is allowed to be in the wake — sometimes the cell
+            # we are asked to reach is one we stripped, and that is the caller's
+            # decision to price, not ours to refuse.
+            if nxt in wake and nxt != b:
+                continue
+            seen.add(nxt)
+            frontier.append((nxt, path + [nxt]))
+
+    # No clean monotone route exists. Keep the original and let the caller price
+    # it, exactly as before — never truncate, never lengthen.
     return primary, False
 
 

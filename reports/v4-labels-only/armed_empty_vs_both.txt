@@ -1,0 +1,3 @@
+running 10 board(s) x 1 rung(s) x 2 loadout(s) x 3 run(s) = 60 turns as sagar_cursor
+  ~    early_solo_seam@armed+empty                     87%
+  FAIL early_solo_seam@armed+both                      80%
