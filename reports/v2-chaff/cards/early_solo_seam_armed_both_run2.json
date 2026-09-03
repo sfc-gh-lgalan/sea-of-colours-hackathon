@@ -1,0 +1,79 @@
+{
+  "battle": "early_solo_seam@armed+both",
+  "board": {
+    "id": "early_solo_seam",
+    "day": 2,
+    "shape": "own redsign, day 2, one opponent, nothing watching",
+    "question": "Day 2. Our pure is LIVE at (15,22) with mass around it. One harvester, two probes. The one opponent's probes are a day old and nowhere near the seam: no weapons, no rival vision on the pure. This is the lowest-risk board in the set. Does the single harvester take the whole seam, or does it flinch?",
+    "canonical": "TAKE EVERYTHING. Nothing on this board justifies a short chain. Drop ON the pure at (15,22) \u2014 landing auto-harvests it \u2014 then walk the mass at (15,23) and (14,23) and push into the fog around the seam. On a one-harvester night the sweep must open on the pure. A pure-only grab is the correct play under danger and the wrong play here: the extension is nearly free, so stopping short is the failure, not the safe choice.",
+    "baseline": "V12 landed on a vein at (15,21) and reached the pure at hour 2 \u2014 ~1052 of a possible ~1369 on the safest board in the suite. Its own reasoning described the right play; the menu had no option that did pure-first-then-mass."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "both",
+    "note": "a full rack \u2014 if the play does not change, nothing was learned"
+  },
+  "result": {
+    "passed": false,
+    "score": 0.8,
+    "seconds": 18.76,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (15,22)"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 1 harvester(s) deployed"
+    },
+    {
+      "name": "min_steps_past_pure",
+      "passed": false,
+      "detail": "stopped 0 step(s) past the pure and wanted at least 3. Nothing on this board can punish the extra hours, so the extension is nearly free and stopping short is the failure"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "3 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        15,
+        22
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "probe",
+      "at": [
+        10,
+        18
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: SEEN_GRAB, UNBEATEN_FLANK, PR1] [predicted=high] [fallback=False] [exec=packager] [thinker=aggressive] moves=3"
+}

@@ -39,6 +39,7 @@ from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import option_economic
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import packager
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import scorch
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import supersede
+from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import ledger
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import value_pyramid
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor.seam_control import (
     SeamPattern,
@@ -1034,6 +1035,13 @@ _KIND_HEADERS = [
     ("chain", "JUICE CHAINS (walk known red, no probe)"),
     ("blue_grab", "HIGH-YIELD BLUE GRABS — ids BL* (rich blue you can SEE and grab with no risk — use when you NEED blue, or you have a spare harvester that would otherwise be wasted on low-yield red; BL* is NOT a GRAB* and does not inherit its priority)"),
     ("supersede", "SUPERSEDES (spend a spare probe to BLIND a rival's probe — deny their next landing & vision; yours survives)"),
+    # ORDNANCE. This list is what the renderer iterates, so a kind absent from
+    # it is registered and then silently dropped before the model ever sees it —
+    # no error, no warning, the option simply never appears. That is exactly how
+    # the weapon options failed their first measured run: all four readiness
+    # rungs PASSED, the option was built and in the registry, and the menu never
+    # carried it. A fifth, undocumented rung, and the quietest of the lot.
+    ("weapon", "ORDNANCE (spend a charge you already own — costs an HOUR, not a harvester; fire EARLY or keep it)"),
     ("frontier", "FRONTIER HOT-DROP (last resort — known red is trace-only)"),
 ]
 
@@ -1458,6 +1466,14 @@ def format_menu_block(
             opts = sorted(
                 opts, key=lambda o: _option_probe_cost(o) > int(probe_stock)
             )
+        # THE LEDGER. Above, the ONLY thing that has ever ordered this menu is a
+        # boolean: affordable before unaffordable. Position therefore carried no
+        # information about value, and the model was left to infer worth from
+        # prose of wildly differing shapes. Order by expected points instead —
+        # richest first, nothing removed. Applied after the affordability sort so
+        # a play the seat cannot make tonight still cannot lead the group.
+        if agent_view is not None and ledger.ordering_enabled():
+            opts = ledger.rank(opts, agent_view, day=day, day_cap=day_cap)
         lines.append(f" {kind_header}:")
         blurb = _KIND_BLURB.get(kind)
         if blurb:
@@ -1474,6 +1490,20 @@ def format_menu_block(
             else:
                 tag = "  · no probe"
             lines.append(opt.menu_line() + tag)
+            # THE LEDGER, second half. One number, in one unit, on every option —
+            # harvest, probe, blue grab, salvo alike. Placed immediately under
+            # the title so the comparison is available before any prose, because
+            # the measured failure was a model comparing "+379" against a
+            # paragraph and taking the number 30 times out of 30. The
+            # decomposition rides along so the headline can be argued with
+            # rather than merely obeyed, and a "~" marks an estimate.
+            if agent_view is not None and ledger.labels_enabled():
+                lines.append(
+                    "     "
+                    + ledger.score(
+                        opt, agent_view, day=day, day_cap=day_cap
+                    ).label()
+                )
             # v12 fix 3.1 — the WHY sits directly under the geometry, above the
             # economics, so the trade is read before the numbers are weighed.
             if opt.rationale:
