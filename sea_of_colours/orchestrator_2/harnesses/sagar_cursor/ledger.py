@@ -85,8 +85,8 @@ _CONVERT_SHAPE_K = 2.0
 #: Ranking and labelling are SEPARATE treatments so a measured change can be
 #: attributed to one of them rather than to both at once (the consensus panel
 #: was explicit about this). Both default on; either can be switched off.
-_LABELS_ON = os.environ.get("SAGAR_CURSOR_LEDGER_LABELS", "1") != "0"
-_ORDER_ON = os.environ.get("SAGAR_CURSOR_LEDGER_ORDER", "1") != "0"
+_LABELS_ON = os.environ.get("SAGAR_CURSOR_LEDGER_LABELS", "0") == "1"
+_ORDER_ON = os.environ.get("SAGAR_CURSOR_LEDGER_ORDER", "0") == "1"
 
 
 @dataclass

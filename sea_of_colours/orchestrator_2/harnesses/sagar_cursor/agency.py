@@ -1066,7 +1066,7 @@ _WEAPON_EV_SHARE = 0.25
 #: "does the rack cost anything when it is never the right play" can be measured
 #: against "is the gate set correctly" — two questions the same flag would
 #: otherwise confound.
-_ORDNANCE_ON = os.environ.get("SAGAR_CURSOR_ORDNANCE", "1") != "0"
+_ORDNANCE_ON = os.environ.get("SAGAR_CURSOR_ORDNANCE", "0") == "1"
 
 _KIND_HEADERS = [
     ("grab", "PRIORITY RED GRABS — ids GRAB* (mass/pure RED you can SEE or reach — the highest-value take, no probe; grab it FIRST)"),
