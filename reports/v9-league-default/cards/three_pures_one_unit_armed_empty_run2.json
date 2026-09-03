@@ -1,0 +1,127 @@
+{
+  "battle": "three_pures_one_unit@armed+empty",
+  "board": {
+    "id": "three_pures_one_unit",
+    "day": 6,
+    "shape": "three pures, one surviving harvester, chaff took the other",
+    "question": "Three pures at (18,2) (19,3) (20,3). One surviving harvester \u2014 chaff killed the other. Night 6 of 7. The offered chains all open on (19,4), which is not a pure, and the long one lifts inside the same chaff window that killed the first unit. Does it reorder, or does it take the menu at face value?",
+    "canonical": "Reorder the same cells so value comes first and the conflict disappears. Drop ON (18,2) at hour zero \u2014 that banks a pure on landing \u2014 then step (19,2), (19,3), (20,3) and lift at hour four. Three pures, clear of the hours where the chaff lands. It sheds two vein cells and beats the short chain by about 750 while being SAFER than the long one. Value-first ordering is what makes a chain safe to trim.",
+    "baseline": "V12 took the two-pure chain \u2014 left 841 red and a whole pure standing on the board."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": true,
+    "score": 1.0,
+    "seconds": 17.43,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (19,3), (20,3), (18,2)"
+    },
+    {
+      "name": "pure_first",
+      "passed": true,
+      "detail": "landed directly on the pure at (18,2)"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 1 harvester(s) deployed"
+    },
+    {
+      "name": "max_steps_past_pure",
+      "passed": true,
+      "detail": "stopped 0 step(s) past the pure (limit 1)"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "8 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        18,
+        2
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        18,
+        3
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        19,
+        3
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        20,
+        3
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "probe",
+      "at": [
+        15,
+        8
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        9,
+        17
+      ]
+    },
+    {
+      "a": "probe",
+      "at": [
+        28,
+        4
+      ]
+    }
+  ],
+  "rationale": "[plan=aggressive: GRAB1, PR2, PR1, PR3] [predicted=low] [fallback=False] [exec=packager] [thinker=aggressive] moves=8"
+}
