@@ -31,7 +31,7 @@ from __future__ import annotations
 from typing import Any, List, Mapping, Sequence
 
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import (
-    digest, doctrine, option_economics, out_of_grid, rules, world_view,
+    digest, doctrine, option_economics, out_of_grid, rules, scorch, world_view,
 )
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor._v7.orbit_wishlist import (
     Wishlist,
@@ -565,7 +565,7 @@ def format_situational_facts_block(
         return "none observed"
 
     players_s = str(player_count) if player_count else "unknown"
-    return (
+    block = (
         "SITUATIONAL FACTS (reason over these; echo them back in "
         "\"situational\"):\n"
         f"  mine: {mine_s}\n"
@@ -573,6 +573,15 @@ def format_situational_facts_block(
         f"  chaff: {_w(chaff_seen, est_chaff)}\n"
         f"  emp: {_w(emp_seen, est_emp)}\n"
     )
+    # RUNG 1. Every line above is about ordnance pointed AT this seat: what hit
+    # it last night, what a rival is estimated to hold. Nothing has ever told it
+    # what is in its OWN rack, which is why the shipped agent buys weapons and
+    # then plans as though unarmed. Silent when the rack is empty, so an unarmed
+    # night pays nothing for it.
+    rack = scorch.prompt_block(agent_view)
+    if rack:
+        block += "\n" + rack + "\n"
+    return block
 
 
 def format_last_night_block(agent_view: Mapping[str, Any]) -> str:
@@ -970,6 +979,14 @@ def _assemble_doctrine(
         text += "\n\n" + doctrine.DOCTRINE_BEWARE_EMP
     if opp_has_chaff or was_chaffed:
         text += "\n\n" + doctrine.DOCTRINE_BEWARE_CHAFF
+
+    # RUNG 4. Every block above is gated on what the OPPONENT holds or on what
+    # was done to us — which is the whole asymmetry: the seat is taught to
+    # survive ordnance and never to spend its own. Gated on OUR rack, so it
+    # appears exactly on the nights the seat could actually act on it and costs
+    # nothing on the nights it could not.
+    if scorch.is_armed(agent_view):
+        text += "\n\n" + doctrine.DOCTRINE_SCORCH
 
     # FINAL NIGHT — supersede enemy probes. Gated to the ACTUAL final night
     # (A6): earlier nights must not see this or the agent starts declaring

@@ -22,7 +22,7 @@ steps); the sanitizer owns final legality.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor._v7.probe_hints import (
     _orbit_harvester_ids,
@@ -90,6 +90,53 @@ def _steps_between(
         cy += 1 if b[1] > cy else -1
         out.append((cx, cy))
     return out
+
+
+def _steps_between_y_first(
+    a: Tuple[int, int], b: Tuple[int, int],
+) -> List[Tuple[int, int]]:
+    """The other L between ``a`` and ``b`` — y first, then x.
+
+    Same endpoint and the same Manhattan length as :func:`_steps_between`;
+    only the corner differs. That is what makes it usable as a detour that
+    costs nothing.
+    """
+    out: List[Tuple[int, int]] = []
+    cx, cy = a
+    while cy != b[1]:
+        cy += 1 if b[1] > cy else -1
+        out.append((cx, cy))
+    while cx != b[0]:
+        cx += 1 if b[0] > cx else -1
+        out.append((cx, cy))
+    return out
+
+
+def _steps_avoiding(
+    a: Tuple[int, int], b: Tuple[int, int], wake: Set[Tuple[int, int]],
+) -> Tuple[List[Tuple[int, int]], bool]:
+    """Manhattan waypoints from ``a`` to ``b``, preferring the L that misses ``wake``.
+
+    This is a RELOCATION, not a cut. Both candidate paths are the same length
+    and land on the same cell, so nothing about the agent's route — its reach,
+    its target, its cost — changes. Only the corner moves. That keeps it inside
+    the house rule that route *shape* belongs to the agent (OBS-27) while still
+    declining to walk ground an earlier wave already stripped, which is worth
+    zero and costs -100 (RULEBOOK: RED -> GREEN on harvest).
+
+    Returns the waypoints and whether a detour was taken.
+    """
+    primary = _steps_between(a, b)
+    if not wake or not any(step in wake for step in primary):
+        return primary, False
+    alternate = _steps_between_y_first(a, b)
+    hits_primary = sum(1 for step in primary if step in wake)
+    hits_alternate = sum(1 for step in alternate if step in wake)
+    if hits_alternate < hits_primary:
+        return alternate, True
+    # Neither L clears it: the destination itself is usually the wake cell. Keep
+    # the original and let the caller price it, exactly as before.
+    return primary, False
 
 
 # ── self-inflicted drop-legality (crush ordering) ──────────────────────────
@@ -545,6 +592,20 @@ class _Packer:
         # never blind-walk a fogged neighbour that the rival may already have
         # stripped to green (the seed-56 self-harm generalised to the walk).
         self.live_red: set = set(live_red_cells or ())
+        # TONIGHT'S wake — every cell a unit already emitted this night has
+        # landed on or walked. Deliberately NOT unioned into ``hazard``: hazard
+        # is an engine fact carried across nights, this is a consequence of the
+        # order we are packing in right now, and merging the two is what made an
+        # earlier fix report the wrong cause (OBS-15's lesson, applied here).
+        #
+        # Why it exists: seam patterns already exclude their OWN earlier waves
+        # (``_value_drop(exclude=wave1_wake)``, and UNBEATEN_FLANK threads the
+        # same set into its comb after OBS-54). Nothing does that ACROSS two
+        # separately selected options, because each is built without knowing
+        # what else the agent will pick. Measured over the baseline bake that is
+        # 16 of 60 turns, 15 of them re-entering one cell: the pure a previous
+        # wave had already lifted.
+        self.wake: Set[Tuple[int, int]] = set()
         # Part C — the thinker's ``chaff_react`` flag. REPORTED, never enforced
         # (fix 2.10): it shortens nothing, and simply records that the agent
         # said it expected a jam so the night can be read back honestly.
@@ -679,12 +740,39 @@ class _Packer:
         steps_emitted = 0
         n_green = 0   # priced-and-kept green steps, warned once
         n_blind = 0   # priced-and-kept fogged steps on a contested seam
+        n_detours = 0  # legs re-cornered to miss tonight's own wake
+        n_skipped = 0  # waypoints an earlier wave had already stripped
+        walked: List[Tuple[int, int]] = [drop]
         for c in comb or []:
             nxt = _cell(c)
             if nxt is None or nxt == cur:
                 continue
+            if nxt in self.wake:
+                # A waypoint an earlier wave already stripped. Standing on it
+                # banks nothing and costs -100, so it is not a target worth
+                # keeping. Dropping it is not a CUT in the OBS-27 sense: the
+                # walk still runs to every remaining target, so the route keeps
+                # its reach and its intent — it just stops paying to revisit
+                # ground we already took.
+                n_skipped += 1
+                if n_skipped == 1:
+                    self.log.append(
+                        f"skipped waypoint {list(nxt)} — an earlier wave already "
+                        "stripped it, so it is synthetic green worth 0 and -100 "
+                        "to stand on. The rest of the walk is unchanged."
+                    )
+                continue
             stopped = False
-            for sx, sy in _steps_between(cur, nxt):
+            leg, detoured = _steps_avoiding(cur, nxt, self.wake)
+            if detoured:
+                n_detours += 1
+                self.log.append(
+                    f"routed {unit} around {list(cur)} -> {list(nxt)} the other "
+                    "way: the direct leg re-entered ground an earlier wave "
+                    "already stripped. Same length, same destination — only the "
+                    "corner moved."
+                )
+            for sx, sy in leg:
                 # Both checks below used to TRUNCATE the walk. Neither is a
                 # legality question — a green step costs -100 and a fogged step
                 # is a gamble, but the engine accepts both — so both are value
@@ -716,6 +804,7 @@ class _Packer:
                 # every route the agent ordered is emitted as ordered.
                 self.moves.append({"a": "step", "unit": unit, "to": [sx, sy]})
                 cur = (sx, sy)
+                walked.append(cur)
                 steps_emitted += 1
             if stopped:
                 break
@@ -724,6 +813,15 @@ class _Packer:
                 f"{unit} route totals: {n_green} green step(s) "
                 f"(~-{n_green * 100}), {n_blind} fogged step(s) on a contested seam"
             )
+        if n_detours:
+            self.log.append(
+                f"{unit} took {n_detours} wake detour(s) — same reach, same "
+                "cells banked, without paying -100 to re-walk our own strip"
+            )
+        # Only now does this unit's ground count as wake: a unit never collides
+        # with itself (it strips as it goes), and the predicate that measures
+        # this scores cross-unit re-entry only.
+        self.wake.update(walked)
         self.moves.append({"a": "pickup", "unit": unit})
         return True
 
@@ -848,9 +946,47 @@ def _is_probe_only(opt: Any) -> bool:
     return False
 
 
+def _pack_emp(pk: "_Packer", payload: Mapping[str, Any]) -> None:
+    """RUNG 2c — compile an EMP salvo to the one wire move the engine takes.
+
+    Three things this has to get right, and each was learned the expensive way
+    in ``docs/TEACHING_WEAPONS.md``:
+
+    * **A salvo is ONE move and ONE hour**, not one per missile. It consumes a
+      single slot of the seat's 21 (§3.10), and the whole salvo lands that hour.
+      Emitting three moves would burn three hours and three charges to do the
+      job of one.
+    * **The engine's shape, not ours.** ``EmpLaunchMove`` takes a primary ``at``
+      plus ``extra_ats`` for the rest of the salvo; it does not take a list in
+      ``at``.
+    * **Fire it first.** Probes die on contact, so an early kill costs the rival
+      a night of vision while a late one destroys a picture they have already
+      used — and an 8h cloud lit at hour 15 of a 21-hour Nox loses most of
+      itself to Aurora. The salvo is therefore hoisted to the front of the
+      queue rather than landing wherever the plan happened to name it.
+    """
+    targets = [
+        cell for cell in (_cell(t) for t in (payload.get("targets") or []))
+        if cell is not None
+    ]
+    if not targets:
+        return
+    move: Dict[str, Any] = {"a": "emp_launch", "at": [targets[0][0], targets[0][1]]}
+    if len(targets) > 1:
+        move["extra_ats"] = [[x, y] for x, y in targets[1:]]
+    # Hour 1. Everything already queued keeps its order behind it.
+    pk.moves.insert(0, move)
+    pk.log.append(
+        f"emp_launch hoisted to hour 1 at {[list(t) for t in targets]} — "
+        f"one charge, one move, one hour; "
+        f"{payload.get('probes_killed', 0)} rival probe(s) in the blast"
+    )
+
+
 _DISPATCH = {
     "seam": _pack_seam,
     "hotdrop": _pack_hotdrop,
+    "weapon": _pack_emp,
     # v11 Phase-1 force-surfaced VALUE-PYRAMID grab — drop + contiguous walk,
     # identical wire shape to a juice chain, so it compiles through _pack_chain.
     "grab": _pack_chain,

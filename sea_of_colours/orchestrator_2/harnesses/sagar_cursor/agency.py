@@ -37,6 +37,7 @@ from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import chain_filter
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import comb_shapes
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import option_economics
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import packager
+from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import scorch
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor import value_pyramid
 from sea_of_colours.orchestrator_2.harnesses.sagar_cursor.seam_control import (
     SeamPattern,
@@ -412,6 +413,116 @@ def _supersede_option(idx: int, h: Mapping[str, Any]) -> Option:
     )
 
 
+# ── RUNG 2b / RUNG 3 — an offensive option that says what it buys ───────
+def _cell_tuple(v: Any) -> Optional[Tuple[int, int]]:
+    """An ``(x, y)`` tuple, or None. (``_xy`` above renders for display.)"""
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        try:
+            return (int(v[0]), int(v[1]))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _own_probe_cells(agent_view: Mapping[str, Any]) -> List[Tuple[int, int]]:
+    """Our own live probe cells — the ones a careless salvo would destroy."""
+    out: List[Tuple[int, int]] = []
+    for e in ((agent_view.get("entities") or {}).get("mine") or []):
+        if not isinstance(e, Mapping) or str(e.get("type") or "") != "probe":
+            continue
+        rem = e.get("nights_remaining")
+        if isinstance(rem, (int, float)) and int(rem) <= 0:
+            continue
+        cell = _cell_tuple(e.get('at'))
+        if cell is not None:
+            out.append(cell)
+    return out
+
+
+def _emp_option(
+    agent_view: Mapping[str, Any],
+    supersede_hints: Sequence[Mapping[str, Any]],
+) -> Optional[Option]:
+    """One EMP salvo aimed at the rival's eyes, priced in what it denies.
+
+    Registered only when the seat actually holds a charge AND there is
+    something worth hitting. An option that cannot be afforded, or that kills
+    nothing, is menu noise — and menu length is a real cost on an 800-token
+    plan call.
+
+    ``detail`` and ``rationale`` are the point of rung 3. Stock V12 leaves both
+    empty on every option, so a play arrives as bare geometry: "launch at
+    (12,9) (8,11)". That is not a decision anyone can make. What a salvo BUYS
+    has to be in the same sentence as where it lands.
+    """
+    held = scorch.stock(agent_view)
+    if held.get("emp", 0) <= 0:
+        return None
+
+    dials = scorch.specs(agent_view)["emp"]
+    probes = [
+        c for c in (_cell_tuple(h.get("probe_at")) for h in (supersede_hints or [])
+                    if isinstance(h, Mapping))
+        if c is not None
+    ]
+    if not probes:
+        return None
+
+    targets = scorch.salvo_targets(
+        probes,
+        radius=dials["radius"],
+        missiles=dials["missiles"],
+        keep_clear=_own_probe_cells(agent_view),
+    )
+    if not targets:
+        # Every aim point would have darkened our own ground. That is a real
+        # answer, not a failure: on this geometry the honest play is to hold
+        # the charge, and an option that lied about it would be worse than none.
+        return None
+
+    killed = scorch.salvo_kill_count(targets, probes, radius=dials["radius"])
+    if killed <= 0:
+        return None
+
+    finder = any(
+        h.get("is_finder") for h in (supersede_hints or []) if isinstance(h, Mapping)
+    )
+    shots = " ".join(f"({x},{y})" for x, y in targets)
+    detail = (
+        f"{killed} rival probe(s) destroyed, {dials['cloud_hours']}h of cloud"
+        + (" — including the REDSIGN FINDER, the disk lighting the contested "
+           "pure" if finder else "")
+    )
+    rationale = (
+        f"Blinds them rather than out-mining them: probes die on contact, so a "
+        f"salvo at hour 1 costs the rival a whole night of vision, while the "
+        f"same shot at hour 15 wastes most of its {dials['cloud_hours']}h to "
+        f"Aurora. Fire it EARLY or keep the charge. "
+        f"The {dials['blue']} BLUE was spent in orbit and is sunk; what this "
+        f"costs you now is ONE of your 21 hours, weighed against the best "
+        f"harvest chain that hour would have banked. "
+        f"Your own units are not immune — these aim points were chosen to keep "
+        f"your own probes out of the blast."
+    )
+    return Option(
+        option_id="SCORCH",
+        kind="weapon",
+        title=f"EMP salvo {shots}",
+        detail=detail,
+        execute_lines=[
+            f"SCORCH: emp_launch at {list(targets[0])}"
+            + (f" with extra_ats {[list(t) for t in targets[1:]]}"
+               if len(targets) > 1 else "")
+        ],
+        payload={
+            "verb": "emp_launch",
+            "targets": [list(t) for t in targets],
+            "probes_killed": killed,
+        },
+        rationale=rationale,
+    )
+
+
 # ── frontier hot-drop (gated last-resort) ───────────────────────────────
 # Purity floor below which known RED counts as "trace-only" (nothing worth a
 # real chain). Mirrors the engine's vein floor so the gate matches scoring.
@@ -708,6 +819,16 @@ def build_registry(
         if isinstance(h, Mapping):
             opt = _supersede_option(i, h)
             reg[opt.option_id] = opt
+
+    # RUNG 2b — the offensive play, registered next to the supersedes because
+    # they answer the same question by different means: a supersede blinds ONE
+    # rival eye and costs a probe, a salvo blinds several and costs an hour.
+    # Offering them together is what makes that a choice rather than a default.
+    # Self-suppressing: returns None when the rack is empty, when nothing is
+    # worth hitting, or when every aim point would darken our own ground.
+    emp = _emp_option(agent_view, supersede_hints or ())
+    if emp is not None:
+        reg[emp.option_id] = emp
 
     # PHASE-1 VALUE PYRAMID — force-surface pure/mass RED the seat can SEE and
     # reach as a top-priority GRAB, regardless of redsign. A HIGH-YIELD BLUE grab

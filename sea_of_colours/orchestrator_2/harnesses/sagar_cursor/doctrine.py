@@ -764,8 +764,39 @@ WEAPONS => MORE UNITS ON THE SEAM, NOT ONE SHORTER CHAIN (offensive read):
 """
 
 
+DOCTRINE_SCORCH = """\
+SPENDING YOUR OWN RACK (offensive — everything above is how to SURVIVE one):
+  You hold ordnance. The rules below are about when to spend it, which is a
+  different question from how to live through theirs.
+    * FIRE AN EMP EARLY OR NOT AT ALL. A salvo is worth its slot at hour 1 or 2
+      and close to nothing after. Probes die on CONTACT, so an early kill costs
+      them a whole night of vision, while a late one destroys a picture they
+      have already used; and an 8h cloud lit at hour 15 of a 21-hour Nox loses
+      most of itself to Aurora. The useful corollary: if the only slot you can
+      spare is late, you do not have room for a salvo tonight — KEEP THE CHARGE.
+      A charge held deliberately is a real doctrine; a rack that is never spent
+      is decoration.
+    * A CERTAIN GRAB BEATS A CLEVER SHOT. If a pure is reachable and yours, take
+      it. Denying ground you were about to work is self-harm, and the salvo does
+      not bank a single point by itself — it only stops them banking. When the
+      board offers you value and them vision, take the value.
+    * THE CLOUD'S HOURS ARE NOT YOUR HOURS. You get ONE action per hour across
+      the WHOLE fleet, so an hour spent launching is an hour no harvester moved.
+      A night built around a salvo must still pick a full slate of chains for
+      the other units, or the shot has cost you more than it denied.
+    * AIM AT EYES, NOT AT GROUND. Blanketing a seam denies it to you as much as
+      to them. The target that pays is the probe — especially the REDSIGN FINDER,
+      the disk lighting a contested pure — because vision is the one thing they
+      cannot re-buy mid-night.
+    * FRIENDLY FIRE IS ON. Your own probes inside your own cloud are destroyed
+      and your own harvesters are disabled. Check your night still works after
+      the blast, not just theirs.
+"""
+
+
 __all__ = [
     "STRATEGIES_CORE",
+    "DOCTRINE_SCORCH",
     "DOCTRINE_BLUE",
     "DOCTRINE_REDSIGN",
     "DOCTRINE_LASTDAY_SUPERSEDE",

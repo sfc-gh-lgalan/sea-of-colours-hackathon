@@ -1,0 +1,98 @@
+{
+  "battle": "two_pures_poker@armed+empty",
+  "board": {
+    "id": "two_pures_poker",
+    "day": 5,
+    "shape": "own AND rival pure both live, mutual vision, one opponent",
+    "question": "Day 5 of 7, fully resourced: two harvesters, four probes. TWO pures are live \u2014 ours at (31,18) surrounded by vein only, and the RIVAL's at (16,6) with mass beside it. Both sit under a rival probe, so they see both too. Does it take both, and does it take them FAST?",
+    "canonical": "Redsign poker, symmetric \u2014 and the whole night is PURE AND PURE ONLY: no mass detours, no vein on the way in. DOUBLE SMASH: drop one harvester ON (16,6) and the other ON (31,18) at hour one, both auto-harvest on landing, lift both at hour two. Worst case they lift one out and crash us on the other and we still deny; there is no branch where they take both. The alternative is to blind their eye on one seam and double-drop the other, which has a higher ceiling and a lower floor. Either beats a vein-first walk that concedes the race by four hours to collect three vein on the way in.",
+    "baseline": "V12 took both pures but reached the rival's at step four via a vein-first walk \u2014 hour five on a cell it could have landed on at hour one. Right content, wrong tempo."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": false,
+    "score": 0.714,
+    "seconds": 0.51,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (16,6)"
+    },
+    {
+      "name": "pure_first",
+      "passed": true,
+      "detail": "landed directly on the pure at (16,6)"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "deploy_all",
+      "passed": false,
+      "detail": "only 1 of 2 harvesters were deployed. An idle unit on a jackpot night banks nothing and denies nothing"
+    },
+    {
+      "name": "max_steps_past_pure",
+      "passed": false,
+      "detail": "harvester_p1 took 2 steps after banking the pure, limit is 0. On this board those hours are exposure paid for with a jackpot already in the hold"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "4 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        16,
+        6
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        16,
+        7
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        17,
+        7
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    }
+  ],
+  "rationale": "[plan=[fallback] follow top heuristic chain via harvester_p1] [predicted=medium] [fallback=True:parse: no_json_object] [exec=mover] [thinker=none] moves=4"
+}
