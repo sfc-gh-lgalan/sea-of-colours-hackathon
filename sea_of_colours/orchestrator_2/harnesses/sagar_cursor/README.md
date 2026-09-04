@@ -5,7 +5,8 @@ cell, live `claude-haiku-4-5`:
 
 ```
 stock V12 (this fork, unmodified)   83%   ·  5/20 clean  ·  16x no_wake_reentry
-sagar_cursor (shipping default)     92%   ·  9/20 clean  ·   1x no_wake_reentry
+sagar_cursor (shipping default)     92%   · 10/20 clean  ·   0x no_wake_reentry
+                                    confirmed on two independent samples
 ```
 
 Every number here is a measured run that was verified to have reached the model.
@@ -53,7 +54,7 @@ mechanical argument, not a statistical one — see §6.
 | --- | --- | --- |
 | `SAGAR_CURSOR_LEDGER_LABELS` | **off** | An expected-points number on every menu option |
 | `SAGAR_CURSOR_LEDGER_ORDER` | **off** | Menu ordered by that number rather than by affordability |
-| `SAGAR_CURSOR_ORDNANCE` | **off** | EMP and chaff options on the menu, EV-gated |
+| `SAGAR_CURSOR_ORDNANCE` | **on** | EMP and chaff options on the menu, EV-gated |
 
 ```bash
 SAGAR_CURSOR_LEDGER_LABELS=1 SAGAR_CURSOR_ORDNANCE=1 \
@@ -63,13 +64,27 @@ SAGAR_CURSOR_LEDGER_LABELS=1 SAGAR_CURSOR_ORDNANCE=1 \
 **The enabled configuration is not validated.** It is an experiment with a
 partially demonstrated capability (§3), and the flag defaults to off.
 
-### Why off
+### Why the labels are off and the ordnance is on
 
-Not because a ranking was proven. **The 90–92% band across builds is unpowered**
-— three runs per board cannot resolve one- or two-point differences, and no
-paired uncertainty estimate has been computed from the suite's own scoring
-function. The default is the **highest-observed and lowest-risk** configuration
-on the tested suite, chosen on conservative validation and operational risk:
+**Ordnance is on because the control run showed it costs nothing.** With pricing
+off it measured 92% / 10 of 20 clean / zero wake collisions, twice — the
+highest-observed configuration, and the same one that occasionally fires. There
+was no trade to make between scoring well and carrying a weapon; an earlier
+draft inferred one from a confounded comparison.
+
+**The labels are off on conservative grounds, not a proven ranking.** The
+90–92% band across builds is **unpowered** — three runs per board cannot resolve
+one- and two-point differences, and no paired uncertainty estimate has been
+computed from the suite's own scoring function. Every build carrying labels
+measured 90–91% and every build without them measured 92%, which is an
+association worth acting on and not a mechanism worth asserting.
+
+Turning the labels on buys **reliable** firing (12 selections per sample rather
+than 2 and 0) at an apparent cost inside that unpowered band. That is a
+reasonable trade for anyone who wants a demonstrably fighting agent, and it is
+one environment variable away.
+
+What remains unvalidated regardless of flags:
 
 - the EMP has **never fired** in play;
 - the salvo path is **compile-verified only**;
@@ -85,6 +100,37 @@ board with a full rack where weapon use is deliberately unscored.
 
 **Not demonstrated:** the EMP has never fired; the salvo compiles but is
 untested in play; BLUE-denial behaviour and λ scheduling are unvalidated.
+
+### What the visibility control settled
+
+The review panel required one experiment before any attribution could stand:
+renderer registration fixed, ordnance **on**, pricing **off**. Two samples:
+
+| | Score | Clean | Wake | Fired |
+| --- | --- | --- | --- | --- |
+| v10 | 92% | 10/20 | 0 | 2 |
+| v11 | 92% | 10/20 | 0 | 0 |
+
+Three things follow, and they are not the things an earlier draft claimed.
+
+**Menu visibility is necessary.** Nothing fired in any run while the option was
+absent from the rendered menu — that is the renderer defect in §5, not a
+judgement the model made.
+
+**Visibility alone is not sufficient in practice.** Two shots and then zero,
+across 120 turns, is at or below noise. The capability is present and it is not
+reliably exercised.
+
+**Pricing is what makes firing reliable, not what makes it possible.** With
+numeric labels the count is 12 in one sample and 12 in another (v3, v4) — a
+large and repeatable increase over 2-and-0. So the numbers *amplify* selection
+rather than enable it.
+
+**And the weapon itself is free.** Ordnance on with pricing off measured
+92%/10/0 twice, against 92%/9/1 with ordnance off. Every build that lost ground
+carried the labels. The apparent cost sits with presentation, not with the
+weapon and not with the firing — though the differences involved are inside the
+unpowered band and are stated as an association, not a mechanism.
 
 ### The claim that was withdrawn
 
@@ -128,6 +174,8 @@ Every mechanism sentence above is gated on controlled rows of this table.
 | v7 | ✓ | ✓ | ✓ | – | – | – | – | 91% | 8/20 | 0 | 4 |
 | v8 | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | 90% | 7/20 | 0 | 4 |
 | v9 | ✓ | – | ✓ | – | – | – | – | 92% | 9/20 | 0 | 1 |
+| **v10** | ✓ | – | ✓ | – | – | ✓ | ✓ | **92%** | **10/20** | 2 | **0** |
+| **v11** | ✓ | – | ✓ | – | – | ✓ | ✓ | **92%** | **10/20** | 0 | **0** |
 
 Notes, because the table invites over-reading:
 
@@ -141,9 +189,10 @@ Notes, because the table invites over-reading:
   staircase was predicted better by its own design criterion and measured worse
   on this sample. It is not "strictly better"; the reasoning is kept in
   `packager.py` beside the code that won.
-- **v10** — renderer fixed, ordnance on, pricing off — is the row that would
-  separate visibility from pricing. Until it exists, that separation is
-  unresolved.
+- **v10 and v11 are the same configuration, run twice.** They are the shipping
+  default. Score, clean count and wake collisions reproduce exactly; the firing
+  count does not (2, then 0), which is the honest picture of a capability that
+  is present but rarely selected without pricing.
 
 ## 5. Three findings about the kit, not this agent
 
