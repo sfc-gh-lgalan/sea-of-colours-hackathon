@@ -994,7 +994,7 @@ def _run_inner(
     #     LLM, and every rejection reason lands on the card.
     verifier_choice = verifier_mod.choose(proposed, agent_view)
     verifier_source = verifier_choice.source
-    if verifier_source != "llm":
+    if verifier_source not in ("llm",):
         # Weapons are orthogonal to the harvest shape: keep whatever ordnance the
         # model committed to (one salvo, one flare at most) at the head of the queue.
         ordnance = [m for m in proposed if isinstance(m, Mapping) and str(m.get("a")) in ("emp_launch", "chaff_flare")]
@@ -1010,6 +1010,12 @@ def _run_inner(
     # The salvo guard runs last: a salvo is worth its slot at hour 1 or 2 and little after.
     proposed, salvo_notes = scorch.enforce_early_salvo(proposed)
     sanitizer_log.extend(salvo_notes)
+    # FINAL GATE. The tactical layer mutated a queue the verifier had already signed,
+    # so re-check exactly what that injection can break: one charge of each, the
+    # flare after the last pickup, the salvo at hour 1, the 21-slot cap and the
+    # probe stock. Ordnance is shed before any harvest order.
+    proposed, gate_notes = verifier_mod.final_gate(proposed, agent_view)
+    sanitizer_log.extend(gate_notes)
 
     # 8. Cap + submit.
     final_moves = proposed[:_MAX_MOVES]

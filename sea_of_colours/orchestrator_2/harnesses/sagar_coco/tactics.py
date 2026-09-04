@@ -72,7 +72,12 @@ def price_option(opt: Any, s: V.Situation, radius: int = 2) -> float:
         # smear (a lit pure, a known halo) the cloud locks us out as much as them.
         known_red_in_cloud = [c for c in covered if s.reds.get(c, 0) > 0]
         if is_tempo and not known_red_in_cloud and not s.pures:
-            value += TEMPO_POINTS_PER_CELL * len(covered)
+            tempo = TEMPO_POINTS_PER_CELL * len(covered)
+            # An eight-hour cloud lit on the last night buys tempo for a tomorrow
+            # that never comes: only the hours before dawn are worth anything.
+            if s.day >= s.day_cap:
+                tempo *= 0.25
+            value += tempo
         # Every known RED cell darkened is a cell our own fleet cannot harvest tonight.
         value -= sum(V.red_value(s.reds[c]) * 0.5 for c in known_red_in_cloud)
         # friendly fire: our own pures inside the cloud make the play self-harm outright
@@ -80,7 +85,13 @@ def price_option(opt: Any, s: V.Situation, radius: int = 2) -> float:
         value -= 600.0 * len(own_hit)
         return value - HOUR_COST_POINTS
     if kind == "chaff":
-        # pays when rivals are on or next to our ground and the night is late
+        # A flare cancels every seat's orders for three hours and the launcher is
+        # immune only in the launch hour, so it is priced as pure denial EARNED ONLY
+        # when our own fleet is already lifted. The harness guarantees that by
+        # sequencing the flare after the last pickup; if that ever fails, the
+        # final gate moves it, so there is no self-jam term to model here beyond
+        # the hour it spends. What it is worth is the landings and lifts the rivals
+        # lose on ground we care about.
         close = [h for h in s.enemy_harvesters if any(V.cheb(h, p) <= 3 for p in s.pures)]
         final = s.day >= s.day_cap
         value = 0.0

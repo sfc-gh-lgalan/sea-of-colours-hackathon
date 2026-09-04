@@ -311,6 +311,7 @@ class Audit:
     green_hits: int = 0
     pures_taken: int = 0
     moves: int = 0
+    cells: int = 0          # total ground committed (path cells across the fleet)
     paths: Dict[str, List[Cell]] = field(default_factory=dict)
 
     @property
@@ -424,6 +425,15 @@ def audit(moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Audit:
     enemy_p = enemy_probe_cells(agent_view)
     rival_sign_centres = [g["center"] for g in redsigns(agent_view) if not g["mine"]]
     known = set(reds) | live_cells(agent_view) | set(blue_map(agent_view))
+    # A cell inside a disk this plan lights is still UNKNOWN at planning time: the
+    # probe reveals terrain when it lands, not when the queue is written. So the
+    # blind-step rule cannot credit our own probes; only drop legality can.
+    rival_presence = set(enemy_p) | enemy_harvester_cells(agent_view)
+
+    def _away_from_rivals(c: Cell) -> int:
+        if not rival_presence:
+            return 0
+        return min(cheb(c, rp) for rp in rival_presence)
     for u in sorted(paths):
         p = paths[u]
         touches_pure = [c for c in p if reds.get(c, 0) >= PURE]
@@ -443,11 +453,23 @@ def audit(moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Audit:
                 a.green_hits += 1
             elif c in natural:
                 a.green_hits += 1
-        # blind steps beside a rival's sign: the ground is theirs to have stripped
+        # Inside a rival's seam their GREEN is invisible to us and a step onto ground
+        # they stripped costs 100 for nothing. One blind step is a fair gamble; two is
+        # not, and the gamble must lead AWAY from where they have been working.
         if rival_sign_centres:
-            blind = [c for c in p[1:] if c not in known and any(cheb(c, g) <= 3 for g in rival_sign_centres)]
+            blind = [(i, c) for i, c in enumerate(p[1:], start=1)
+                     if c not in known and any(cheb(c, g) <= 3 for g in rival_sign_centres)]
             if len(blind) > 1:
-                a.violations.append(f"{u} walks {len(blind)} unlit cells inside a rival's seam (their GREEN is invisible to you)")
+                a.violations.append(f"{u} takes {len(blind)} blind steps inside a rival's seam (one is a gamble, two is careless)")
+            elif len(blind) == 1:
+                i, c = blind[0]
+                on_centre = any(p[0] == g for g in rival_sign_centres)
+                if not on_centre:
+                    a.violations.append(
+                        f"{u} gambles a blind step to {c} without standing on the sign centre "
+                        "(only the unit on the centre has the graded halo in its favour)")
+                elif rival_presence and _away_from_rivals(c) < _away_from_rivals(p[i - 1]):
+                    a.violations.append(f"{u} steps blind toward the ground the rival has been working ({c})")
         for c in p:
             if c in seen:
                 a.violations.append(f"{u} re-enters {c} already in another unit's path")
@@ -469,6 +491,7 @@ def audit(moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Audit:
             a.red_cells += 1
     a.value -= GREEN_PENALTY * a.green_hits
     a.pures_taken = len(pure_cells_taken)
+    a.cells = sum(len(p) for p in paths.values())
     a.paths = paths
     return a
 
@@ -703,26 +726,27 @@ def shape_plan(agent_view: Mapping[str, Any]) -> Tuple[List[Move], List[str]]:
             # light the centre from one cell off it so the landing itself stays clear
             light(centre)
             log.append(f"sign at {centre} is dark: one probe beside the centre lights the landing")
-        # first unit lands as close to the centre as vision allows, then combs warmer
+        # Land as close to the centre as vision allows, then comb warmer. Prefer
+        # landing ONE cell out and stepping onto the centre: inside a rival's seam
+        # a blind step is only defensible when it gets warmer, and a comb is a walk.
         for u in list(units)[:2]:
             land = _warm_centre_landing(s, centre, live, taken)
             if land is None:
                 break
-            # walk warmer: toward centre; a unit not on the centre takes ONE step at most,
-            # because every fog step on a rival-worked seam risks their GREEN
             path = [land]
-            cur = land
-            max_blind = 1
-            for i in range(max_blind):
-                nxt_c = [n for n in neighbours4(cur, s.dims) if n not in path and n not in _forbidden(s, taken)]
-                if not nxt_c:
-                    break
-                nxt_c.sort(key=lambda n: (cheb(n, centre), n[1], n[0]))
-                # always take one step (a comb is a walk, not a landing); after that only warmer or level
-                if i > 0 and cheb(nxt_c[0], centre) > cheb(cur, centre):
-                    break
-                cur = nxt_c[0]
-                path.append(cur)
+            # exactly one blind step, and only for the unit standing ON the centre:
+            # the halo around a find is graded, so its neighbour is likelier mass than
+            # ground the rival already stripped. Taken away from their own workings.
+            rivals = set(s.enemy_probes) | s.enemy_harvesters
+            cands = ([n for n in neighbours4(land, s.dims) if n not in _forbidden(s, taken)]
+                     if land == centre else [])
+            if cands:
+                cands.sort(key=lambda n: (
+                    cheb(n, centre),
+                    -(min(cheb(n, rp) for rp in rivals) if rivals else 0),
+                    -s.reds.get(n, 0), n[1], n[0],
+                ))
+                path.append(cands[0])
             taken |= set(path)
             assignments.append((u, path))
             units.remove(u)
@@ -831,11 +855,223 @@ def emergency_plan(agent_view: Mapping[str, Any]) -> List[Move]:
     return moves
 
 
+def repair(moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Tuple[List[Move], List[str]]:
+    """Fix a plan's SHAPE while keeping the model's target selection.
+
+    Replacing a plan throws away the model's judgement about WHERE to work, which
+    in a real season is most of the value: the board is mostly fog and the model
+    is the half of the system that decides what to explore. So the first response
+    to a violation is surgery, not substitution:
+
+    * a unit that walks to a pure is re-rooted to land ON it;
+    * a detour past a pure on a contested night is trimmed;
+    * a walk that exceeds the outing cap, re-enters a partner's wake, steps on
+      GREEN or wanders unlit through a rival's seam is truncated at that cell;
+    * probes queued before the drops are moved after the last pickup, except the
+      one probe that lights a landing;
+    * every dropped unit gets a pickup.
+    """
+    s = situation(agent_view)
+    log: List[str] = []
+    reds = s.reds
+    synth, natural = s.synth, s.natural
+    live0 = set(s.live)
+    known = set(reds) | live0 | set(blue_map(agent_view))
+    rival_presence = set(s.enemy_probes) | s.enemy_harvesters
+    pures_all = [c for c, p in reds.items() if p >= PURE]
+    lone_unit = len(s.units) == 1 and len(pures_all) == 1
+    tempo_night = len(pures_all) >= 2
+    rival_centres = [g["center"] for g in s.signs if not g["mine"]]
+
+    probes: List[Cell] = []
+    order: List[str] = []          # unit ids in drop order
+    paths: Dict[str, List[Cell]] = {}
+    for m in moves:
+        if not isinstance(m, Mapping):
+            continue
+        act = str(m.get("a") or "")
+        if act == "probe":
+            c = _xy(m.get("at"))
+            if c is not None and c not in probes:
+                probes.append(c)
+        elif act == "drop":
+            u, c = str(m.get("unit") or ""), _xy(m.get("at"))
+            if u and c is not None and u not in paths:
+                paths[u] = [c]
+                order.append(u)
+        elif act == "step":
+            u, c = str(m.get("unit") or ""), _xy(m.get("to"))
+            if u in paths and c is not None:
+                paths[u].append(c)
+
+    # vision after every probe in the plan is spent
+    live = set(live0)
+    for c in probes:
+        live |= disk(c, s.r, s.dims)
+
+    # 1. re-root onto a pure the unit was walking to
+    for u in order:
+        p = paths[u]
+        idx = [i for i, c in enumerate(p) if reds.get(c, 0) >= PURE]
+        if idx and idx[0] > 0:
+            first = idx[0]
+            if p[first] in live:
+                paths[u] = [p[first]] + p[first + 1:]
+                log.append(f"repair: {u} re-rooted to land ON the pure {p[first]}")
+
+    # 2. trim tails and truncate at the first illegal cell
+    taken: Set[Cell] = set()
+    for u in order:
+        p = paths[u]
+        out = [p[0]]
+        for c in p[1:]:
+            if len(out) - 1 >= MAX_STEPS:
+                log.append(f"repair: {u} truncated at the {MAX_STEPS}-step outing cap")
+                break
+            if c in synth or c in natural:
+                log.append(f"repair: {u} truncated before GREEN {c}")
+                break
+            if c in taken:
+                log.append(f"repair: {u} truncated before {c}, already in another unit's path")
+                break
+            if rival_centres and c not in known and any(cheb(c, g) <= 3 for g in rival_centres):
+                prev = out[-1]
+                spent_blind = sum(1 for x in out[1:]
+                                  if x not in known and any(cheb(x, g) <= 3 for g in rival_centres))
+                closer = (rival_presence
+                          and min((cheb(c, rp) for rp in rival_presence), default=0)
+                          < min((cheb(prev, rp) for rp in rival_presence), default=0))
+                on_centre = any(out[0] == g for g in rival_centres)
+                if spent_blind >= 1 or closer or not on_centre:
+                    why = ("a second blind step" if spent_blind >= 1
+                           else "toward the ground they have been working" if closer
+                           else "the unit is not standing on the sign centre")
+                    log.append(f"repair: {u} truncated before blind {c} inside a rival's seam ({why})")
+                    break
+            out.append(c)
+        idx = [i for i, c in enumerate(out) if reds.get(c, 0) >= PURE]
+        if idx:
+            last = idx[-1]
+            watched = any(in_disk(e, out[0], s.r) for e in s.enemy_probes)
+            if (tempo_night or watched) and not lone_unit and last < len(out) - 1:
+                log.append(f"repair: {u} tail trimmed after the pure (contested night)")
+                out = out[: last + 1]
+            elif lone_unit and not tempo_night and len(out) - 1 - last < UNCONTESTED_MIN_TAIL:
+                ext, _ = _best_chain(s, out[-1], taken | set(out), max_steps=MAX_STEPS - (len(out) - 1),
+                                     min_len=UNCONTESTED_MIN_TAIL - (len(out) - 1 - last))
+                if len(ext) > 1:
+                    out = out + ext[1:]
+                    log.append(f"repair: {u} extended {len(ext) - 1} step(s) into the halo (alone, nothing to punish it)")
+        paths[u] = out
+        taken |= set(out)
+
+    # 3. probes: keep only what lights a landing before the drops
+    lighting: List[Cell] = []
+    for c in probes:
+        d = disk(c, s.r, s.dims)
+        if any(paths[u][0] not in live0 and paths[u][0] in d for u in order):
+            lighting.append(c)
+    rest = [c for c in probes if c not in lighting]
+    if len(lighting) > 1:
+        lighting = lighting[:1]
+        log.append("repair: kept one lighting probe before the drops")
+
+    out_moves: List[Move] = []
+    for c in lighting:
+        out_moves.append({"a": "probe", "at": [c[0], c[1]]})
+    for u in order:
+        p = paths[u]
+        out_moves.append({"a": "drop", "unit": u, "at": [p[0][0], p[0][1]]})
+        cur = p[0]
+        for c in p[1:]:
+            for step in manhattan_path(cur, c):
+                out_moves.append({"a": "step", "unit": u, "to": [step[0], step[1]]})
+                cur = step
+        out_moves.append({"a": "pickup", "unit": u})
+    if rest:
+        log.append(f"repair: {len(rest)} probe(s) moved after the fleet is down (launches are public)")
+    for c in rest:
+        out_moves.append({"a": "probe", "at": [c[0], c[1]]})
+    return out_moves[:MAX_MOVES], log
+
+
+def final_gate(moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Tuple[List[Move], List[str]]:
+    """Last check before submit, AFTER ordnance has been injected.
+
+    The tactical layer adds a salvo at the head and a flare after the last pickup
+    once the verifier has already signed the harvest shape, so the signed queue is
+    not the submitted queue. This gate re-checks only what that injection can
+    break, and it trims ordnance and trailing probes rather than a walk, because
+    a harvest chain that reaches the engine is worth more than a charge.
+    """
+    out = [dict(m) for m in moves if isinstance(m, Mapping)]
+    log: List[str] = []
+    rack = weapon_stock(agent_view)
+
+    # one charge of each per night, and never more than the rack holds
+    seen = {"emp_launch": 0, "chaff_flare": 0}
+    keep: List[Move] = []
+    for m in out:
+        act = str(m.get("a") or "")
+        if act in seen:
+            allowed = rack.get("emp" if act == "emp_launch" else "chaff", 0)
+            if seen[act] >= min(1, allowed):
+                log.append(f"final gate: dropped a duplicate or unfunded {act}")
+                continue
+            seen[act] += 1
+        keep.append(m)
+    out = keep
+
+    # a flare jams us too: it must come after the last pickup
+    last_pick = max((i for i, m in enumerate(out) if str(m.get("a")) == "pickup"), default=-1)
+    flares = [i for i, m in enumerate(out) if str(m.get("a")) == "chaff_flare"]
+    if flares and last_pick >= 0 and flares[0] < last_pick:
+        f = out.pop(flares[0])
+        last_pick = max((i for i, m in enumerate(out) if str(m.get("a")) == "pickup"), default=-1)
+        out.insert(last_pick + 1, f)
+        log.append("final gate: moved the flare after the last pickup (it jams our own house)")
+
+    # a salvo is worth its slot at hour 1 or 2 and little after
+    for i, m in enumerate(list(out)):
+        if str(m.get("a")) == "emp_launch" and i > 1:
+            out.insert(0, out.pop(i))
+            log.append("final gate: hoisted the salvo to hour 1")
+            break
+
+    # slot cap: shed ordnance first, then trailing probes, never a walk
+    if len(out) > MAX_MOVES:
+        for act in ("chaff_flare", "emp_launch"):
+            while len(out) > MAX_MOVES:
+                idx = next((i for i, m in enumerate(out) if str(m.get("a")) == act), None)
+                if idx is None:
+                    break
+                out.pop(idx)
+                log.append(f"final gate: dropped {act} to stay inside the {MAX_MOVES}-slot cap")
+        while len(out) > MAX_MOVES:
+            idx = next((i for i in range(len(out) - 1, -1, -1) if str(out[i].get("a")) == "probe"), None)
+            if idx is None:
+                break
+            out.pop(idx)
+            log.append(f"final gate: dropped a trailing probe to stay inside the {MAX_MOVES}-slot cap")
+        if len(out) > MAX_MOVES:
+            log.append(f"final gate: hard-truncated to {MAX_MOVES} orders")
+            out = out[:MAX_MOVES]
+
+    # probe stock is real money: never queue more probes than we own
+    stock = probe_stock(agent_view)
+    probes = [i for i, m in enumerate(out) if str(m.get("a")) == "probe"]
+    if len(probes) > stock:
+        for i in reversed(probes[stock:]):
+            out.pop(i)
+        log.append(f"final gate: dropped {len(probes) - stock} probe(s) beyond the stock of {stock}")
+    return out, log
+
+
 # ── Choice ────────────────────────────────────────────────────────────
 @dataclass
 class Choice:
     moves: List[Move]
-    source: str            # "llm" | "shape" | "llm_repaired"
+    source: str            # "llm" | "llm_repaired" | "shape"
     llm_audit: Optional[Audit]
     shape_audit: Audit
     reasons: List[str]
@@ -843,30 +1079,52 @@ class Choice:
 
 
 def choose(llm_moves: Sequence[Move], agent_view: Mapping[str, Any]) -> Choice:
-    shape_moves, shape_log = shape_plan(agent_view)
-    sa = audit(shape_moves, agent_view)
+    """Keep the model's plan wherever it can be made legal; fall back to doctrine."""
     reasons: List[str] = []
     la = audit(list(llm_moves), agent_view) if llm_moves else None
 
+    if la is not None and la.clean:
+        shape_moves, shape_log = shape_plan(agent_view)
+        sa = audit(shape_moves, agent_view)
+        # A clean plan stands unless the shape plan banks materially more KNOWN red.
+        better_value = la.value >= LLM_VALUE_TOLERANCE * sa.value or la.red_cells >= sa.red_cells
+        # With nothing known on the ground (a blind sign) value cannot separate the
+        # plans, so the tie-break is how much ground each actually commits: a unit
+        # that lands and never walks has combed nothing.
+        enough_ground = la.cells >= sa.cells
+        if (sa.value <= 0 and enough_ground) or (sa.value > 0 and better_value and enough_ground):
+            reasons.append(f"LLM plan clean (value {la.value:.0f} vs shape {sa.value:.0f}, ground {la.cells} vs {sa.cells})")
+            return Choice(list(llm_moves), "llm", la, sa, reasons, shape_log)
+        reasons.append(f"LLM plan clean but weaker than doctrine (value {la.value:.0f} vs {sa.value:.0f}, ground {la.cells} vs {sa.cells})")
+        reasons.append("shape plan submitted")
+        return Choice(list(shape_moves), "shape", la, sa, reasons, shape_log)
+
+    if la is not None:
+        # Surgery first: keep WHERE the model chose to work, fix the shape.
+        rep_moves, rep_log = repair(llm_moves, agent_view)
+        ra = audit(rep_moves, agent_view)
+        if ra.clean:
+            shape_moves, shape_log = shape_plan(agent_view)
+            sa = audit(shape_moves, agent_view)
+            better_value = ra.value >= LLM_VALUE_TOLERANCE * sa.value or ra.red_cells >= sa.red_cells
+            enough_ground = ra.cells >= sa.cells
+            if (sa.value <= 0 and enough_ground) or (sa.value > 0 and better_value and enough_ground):
+                reasons.append("LLM plan violated: " + "; ".join(la.violations[:3]))
+                reasons.append("repaired in place: " + "; ".join(rep_log[:4]))
+                return Choice(rep_moves, "llm_repaired", la, ra, reasons, rep_log)
+            reasons.append(f"repaired plan clean but weaker than doctrine (value {ra.value:.0f} vs {sa.value:.0f}, ground {ra.cells} vs {sa.cells})")
+            reasons.append("shape plan submitted")
+            return Choice(list(shape_moves), "shape", la, sa, reasons, shape_log)
+        reasons.append("repair could not make it clean: " + "; ".join(ra.violations[:3]))
+
+    shape_moves, shape_log = shape_plan(agent_view)
+    sa = audit(shape_moves, agent_view)
     if la is None:
-        reasons.append("LLM produced no orders; shape plan submitted")
-        return Choice(list(shape_moves), "shape", None, sa, reasons, shape_log)
-
-    if la.clean and (sa.value <= 0 or la.value >= LLM_VALUE_TOLERANCE * sa.value):
-        reasons.append(f"LLM plan clean and within value tolerance ({la.value:.0f} vs shape {sa.value:.0f})")
-        return Choice(list(llm_moves), "llm", la, sa, reasons, shape_log)
-
-    if la.clean:
-        reasons.append(f"LLM plan clean but leaves value on the table ({la.value:.0f} vs shape {sa.value:.0f})")
-    else:
-        reasons.append("LLM plan violates doctrine: " + "; ".join(la.violations[:4]))
-
+        reasons.append("LLM produced no orders")
     if sa.clean:
         reasons.append("shape plan clean; submitted")
         return Choice(list(shape_moves), "shape", la, sa, reasons, shape_log)
-
-    # neither clean: fewer violations wins, value breaks ties
-    if (len(la.violations), -la.value) <= (len(sa.violations), -sa.value):
+    if la is not None and (len(la.violations), -la.value) <= (len(sa.violations), -sa.value):
         reasons.append("neither plan clean; LLM plan has fewer violations")
         return Choice(list(llm_moves), "llm", la, sa, reasons, shape_log)
     reasons.append("neither plan clean; shape plan has fewer violations")

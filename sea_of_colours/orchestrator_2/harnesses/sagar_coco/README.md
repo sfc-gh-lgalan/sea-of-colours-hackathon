@@ -24,7 +24,7 @@ harness verifies the queue against the rules of good play, and doctrine decides.
 | Shape planner alone (offline, no model) | 0.9800 | n/a | n/a |
 | SAGAR_COCO v1 (model + verifier) | 0.9575 | 7 EMP, 1 chaff (siege only) | 0 |
 
-The one board that cannot reach 1.0 by fair play is `blind_grab_rival_seam`: its
+The one board that did not reach 1.0 in any run is `blind_grab_rival_seam`: its
 `denial_probe` predicate wants a probe on a rival probe the seat is never shown.
 
 ## Fair play
