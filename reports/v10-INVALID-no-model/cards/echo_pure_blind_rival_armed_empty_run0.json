@@ -1,0 +1,104 @@
+{
+  "battle": "echo_pure_blind_rival@armed+empty",
+  "board": {
+    "id": "echo_pure_blind_rival",
+    "day": 4,
+    "shape": "own echo pure, live rival seam, one opponent",
+    "question": "Our pure at (31,18) is confirmed in ECHO \u2014 one night old, exact coordinate. A rival redsign at ~(17,6) is live and fully fogged, with their finder probe at (16,9). Two harvesters, three probes. Can it bank its own jackpot and blind the rival's eye in the same night?",
+    "canonical": "Bank the echo pure and blind the rival finder at (16,9) simultaneously \u2014 but arrive FAST. The pure is public: the redsign told every seat, so this is a race and the whole question is speed of arrival. A four-step approach is too long. Either eat the green to take the shorter line (-100 to arrive a hop sooner is cheap against 765 lost to a rival) or hot-drop on the coordinate the echo already gives you. Do not hold probes 'for tomorrow's frontier' on night 4 of 7 with two live seams.",
+    "baseline": "V12 reasoned correctly about the echo pure, then the compiler capped both chains to two steps \u2014 cutting the pure itself \u2014 and spent two held probes far from either seam."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "empty",
+    "note": "no ordnance \u2014 the baseline every rung assumes"
+  },
+  "result": {
+    "passed": false,
+    "score": 0.8,
+    "seconds": 0.5,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (31,18)"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "deploy_all",
+      "passed": false,
+      "detail": "only 1 of 2 harvesters were deployed. An idle unit on a jackpot night banks nothing and denies nothing"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "6 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        30,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        31,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        31,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        32,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1",
+      "to": [
+        32,
+        18
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    }
+  ],
+  "rationale": "[plan=[fallback] follow top heuristic chain via harvester_p1] [predicted=medium] [fallback=True:parse: no_json_object] [exec=mover] [thinker=none] moves=6"
+}
