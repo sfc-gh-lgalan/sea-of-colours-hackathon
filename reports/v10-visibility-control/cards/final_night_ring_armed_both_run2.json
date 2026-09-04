@@ -1,0 +1,134 @@
+{
+  "battle": "final_night_ring@armed+both",
+  "board": {
+    "id": "final_night_ring",
+    "day": 7,
+    "shape": "final night, own seam, unwatched, one opponent",
+    "question": "FINAL NIGHT. Own pure at (31,18) with mass at (31,17) and (32,17). Two harvesters, one probe. The seam is UNWATCHED \u2014 no rival probe reaches it. Last night it lost a race on the RIVAL's seam. Does it convert the night, or does it carry yesterday's fear onto a board where nobody can see it?",
+    "canonical": "Smash the pure, then strip the ring with the SECOND unit. Denial is the reason, not danger: it is the last night and the redsign is public, so they will blind-grab our seam if we leave the mass standing. Drop ON (31,18), lift hour two. Second unit opens on the MASS at (31,17), steps (32,17), lifts \u2014 because the pure is already banked, a jam on this wave costs only ring mass. The probe goes to denial; final-night probes have no frontier value. This beats taking the pure alone by about 591 of swing, not of points: the same money either way, but the ring is 591 the rival cannot have.",
+    "baseline": "V12 banked ~1321 and left ~706 by taking the pure alone on an unwatched seam, justifying the short night by citing contest on a seam nobody could see."
+  },
+  "rung": {
+    "id": "armed",
+    "summary": "one opponent holding chaff and an EMP, and able to buy more",
+    "teaches": "that a plan can be cancelled. Chaff is the only thing that denies an hour-one landing, so with chaff in play a second pass at the pure finally insures against something \u2014 and a chain that lifts late can be cut before it lifts at all. Value-first ordering stops being a nicety."
+  },
+  "loadout": {
+    "id": "both",
+    "note": "a full rack \u2014 if the play does not change, nothing was learned"
+  },
+  "result": {
+    "passed": true,
+    "score": 1.0,
+    "seconds": 20.51,
+    "error": "",
+    "weapons_fired": {
+      "emp_launch": 0,
+      "chaff_flare": 0
+    }
+  },
+  "checks": [
+    {
+      "name": "take_pure",
+      "passed": true,
+      "detail": "reached the pure at (31,18)"
+    },
+    {
+      "name": "pure_first",
+      "passed": true,
+      "detail": "landed directly on the pure at (31,18)"
+    },
+    {
+      "name": "no_green",
+      "passed": true,
+      "detail": "no unit touched synthetic green"
+    },
+    {
+      "name": "no_wake_reentry",
+      "passed": true,
+      "detail": "no unit re-entered another's wake"
+    },
+    {
+      "name": "no_repeat_pure",
+      "passed": true,
+      "detail": "the pure was taken once"
+    },
+    {
+      "name": "deploy_all",
+      "passed": true,
+      "detail": "all 2 harvester(s) deployed"
+    },
+    {
+      "name": "compiler_clean",
+      "passed": true,
+      "detail": "9 moves reached the engine"
+    }
+  ],
+  "moves": [
+    {
+      "a": "drop",
+      "unit": "harvester_p1",
+      "at": [
+        31,
+        18
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1"
+    },
+    {
+      "a": "drop",
+      "unit": "harvester_p1_2",
+      "at": [
+        31,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        30,
+        17
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        30,
+        18
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        30,
+        19
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        31,
+        19
+      ]
+    },
+    {
+      "a": "step",
+      "unit": "harvester_p1_2",
+      "to": [
+        32,
+        19
+      ]
+    },
+    {
+      "a": "pickup",
+      "unit": "harvester_p1_2"
+    }
+  ],
+  "rationale": "[plan=aggressive: SEEN_GRAB, WALK_TO_CONTEST] [predicted=high] [fallback=False] [exec=packager] [thinker=aggressive] moves=9"
+}
