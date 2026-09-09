@@ -1,0 +1,5 @@
+1. The whole board is fog. You cannot see the RED.
+2. Probes are how you look.
+3. The outline is what this probe will reveal.
+4. Right-click any square for the same orders.
+5. You start with two. Spend both — an unspent probe sees nothing.

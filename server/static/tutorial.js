@@ -48,7 +48,7 @@
       title: "Night one — you cannot see anything yet",
       chapters: [
         {
-          film: "basic_probe.webm",
+          film: "01_basic_probe.webm",
           heading: "Probes cut holes in the fog",
           body:
             "The board starts blacked out. You have no idea where the RED is, "
@@ -64,7 +64,7 @@
           todo: "Launch both probes, on two separate patches of fog.",
         },
         {
-          film: "basic_praxis.webm",
+          film: "02_basic_praxis.webm",
           heading: "PRAXIS carries out the plan",
           body:
             "Nothing you click happens immediately. Orders stack up in the "
@@ -84,7 +84,7 @@
       title: "Orbit — spending the morning's credits",
       chapters: [
         {
-          film: "basic_orbit_probes.webm",
+          film: "03_basic_orbit_probes.webm",
           heading: "1000 credits a turn, and probes are what you can afford",
           body:
             "Between nights you are in orbit, and you get a fresh 1000 credits "
@@ -104,7 +104,7 @@
       title: "Night two — harvesters, and how to lose one",
       chapters: [
         {
-          film: "basic_drop.webm",
+          film: "04_basic_drop.webm",
           heading: "RED in the vault is the whole game — and not all RED is "
             + "worth the same",
           body:
@@ -134,7 +134,7 @@
             + "the richest seam you can see, walk it, and LIFT.",
         },
         {
-          film: "basic_stranded.webm",
+          film: "05_basic_stranded.webm",
           heading: "A harvester you do not lift is a harvester you lose",
           body:
             "This is the one that catches everybody, so the film does not "
@@ -161,7 +161,7 @@
       title: "Orbit — where the score actually comes from",
       chapters: [
         {
-          film: "basic_score.webm",
+          film: "06_basic_score.webm",
           heading: "Ground, hold, station, catapult, score",
           body:
             "If you harvested last night and the scoreboard did not move, "
@@ -179,7 +179,7 @@
           todo: "Commit the orbit to load the catapult. It throws tomorrow night.",
         },
         {
-          film: "basic_buy_harvester.webm",
+          film: "07_basic_buy_harvester.webm",
           heading: "Two harvesters, two seams",
           body:
             "By now you have banked something and you have credits stacked from "
@@ -199,7 +199,7 @@
       title: "Last night — traffic, and stale eyes",
       chapters: [
         {
-          film: "basic_crash.webm",
+          film: "08_basic_crash.webm",
           heading: "Two harvesters cannot share a square",
           body:
             "It happens in two shapes, and the film shows both in one real "
@@ -217,7 +217,7 @@
           todo: "Route both harvesters clear of the trails they left last night.",
         },
         {
-          film: "basic_supersede.webm",
+          film: "09_basic_supersede.webm",
           heading: "A newer probe wins the square",
           body:
             "Probes do not stack usefully. Where two of your probe fields "
@@ -261,7 +261,7 @@
       title: "Night one — the map is dark, and it is still telling you things",
       chapters: [
         {
-          film: "adv_hotdrop.webm",
+          film: "10_adv_hotdrop.webm",
           heading: "Blue signs, and landing on ground you cannot see",
           body:
             "Blue is radioactive. Every blue pocket smears a glow across "
@@ -288,7 +288,7 @@
       title: "Orbit — what blue is actually for",
       chapters: [
         {
-          film: "adv_buy_emp.webm",
+          film: "11_adv_buy_emp.webm",
           heading: "Credits buy hulls. Weapons cost blue.",
           body:
             "Two currencies, and they do not convert. Credits arrive on "
@@ -309,7 +309,7 @@
       title: "Night two — the REDSIGN, and why jackpots cannot be kept quiet",
       chapters: [
         {
-          film: "adv_redsign.webm",
+          film: "12_adv_redsign.webm",
           heading: "Find a pure seam and the whole board is told",
           body:
             "A handful of squares on the map are PURE — 255, the richest "
@@ -330,7 +330,7 @@
             + "you find one.",
         },
         {
-          film: "adv_redsign_rival.webm",
+          film: "13_adv_redsign_rival.webm",
           heading: "A redsign you did not light",
           body:
             "The same mechanic from the other side. You probe your own "
@@ -358,7 +358,7 @@
       title: "Orbit — the cheap weapon, and the one that arrives first",
       chapters: [
         {
-          film: "adv_buy_snap.webm",
+          film: "14_adv_buy_snap.webm",
           heading: "A hundred blue buys one square of one hour",
           body:
             "Weapons are priced 100, 200, 300 — a SNAP, an EMP, a chaff "
@@ -384,7 +384,7 @@
       title: "Night three — the jackpot fight, and the beat that decides it",
       chapters: [
         {
-          film: "adv_smash_grab.webm",
+          film: "15_adv_smash_grab.webm",
           heading: "Smash and grab — take the pure you can see, and take "
             + "it badly",
           body:
@@ -409,7 +409,7 @@
             + "then take the jackpot and go.",
         },
         {
-          film: "adv_blind_grab.webm",
+          film: "16_adv_blind_grab.webm",
           heading: "Blind and grab — attack a jackpot you cannot see",
           body:
             "The other case: the beacon is lit and you have never been "
@@ -434,7 +434,7 @@
             + "and comb the smear while they are blind.",
         },
         {
-          film: "adv_snap.webm",
+          film: "17_adv_snap.webm",
           heading: "SNAP — the answer to the two grabs you just learned",
           body:
             "Both grabs have the same weak point, and it is not the "
@@ -472,7 +472,7 @@
       title: "Orbit — a second hull, and the dearest thing on the board",
       chapters: [
         {
-          film: "adv_buy_chaff.webm",
+          film: "18_adv_buy_chaff.webm",
           heading: "Chaff costs no credits, and more blue than you own",
           body:
             "A harvester first: two seams need two hulls, and by now you "
@@ -492,7 +492,7 @@
             + "granted blue.",
         },
         {
-          film: "adv_arms_bar.webm",
+          film: "19_adv_arms_bar.webm",
           heading: "Everyone can see what you are carrying",
           body:
             "Watch the station as the flare is built. The blue does not "
@@ -536,7 +536,7 @@
       title: "Last night — taking the clock, and taking the ride home",
       chapters: [
         {
-          film: "adv_emp.webm",
+          film: "20_adv_emp.webm",
           heading: "EMP does not take the red. It takes the clock — if you "
             + "are willing to wait for it.",
           body:
@@ -565,7 +565,7 @@
             + "it, and WAIT out your own cloud before you walk in.",
         },
         {
-          film: "adv_chaff.webm",
+          film: "21_adv_chaff.webm",
           heading: "Chaff denies three hours. Aimed at one, it kills.",
           body:
             "A flare jams every House for three hours — yours included, "
