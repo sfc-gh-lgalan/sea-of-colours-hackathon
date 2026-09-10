@@ -30,7 +30,7 @@ This file is always-on context for AI agents; keep it lean and current.
  `harnesses/tabula_v12/` fans out here.
 - `server/static/films/*.webm` — the teaching-mode films (v1.32). These
  are **generated build output that is checked in**: they are shot by
- `scripts/films/make_tutorial_films.py` driving the real UI in a real browser,
+ `backstage/films/make_tutorial_films.py` driving the real UI in a real browser,
  never hand-recorded. That makes them a **fan-out surface with teeth** —
  a selector rename, a moved button or a reworded verb can silently turn
  a film into a clip of the wrong thing. If you change the ORDERS panel,
@@ -38,8 +38,8 @@ This file is always-on context for AI agents; keep it lean and current.
  **watch the result**; the harness asserts outcomes, not pedagogy.
  `docs/TUTORIAL_PLAN.md` §9 is the state of play; the reel text and its
  turn live in `server/static/tutorial.js`, the presets in
- `sea_of_colours/game/tutorial.py`, and `scripts/films/_fx_tutorial.py` is the
- end-to-end check. **All of the filming kit is in `scripts/films/` and
+ `sea_of_colours/game/tutorial.py`, and `backstage/films/_fx_tutorial.py` is the
+ end-to-end check. **All of the filming kit is in `backstage/films/` and
  nothing outside it imports any of it** — start at its README.
 - `docs/SNOWFLAKE_SETUP.md` — BYO-Snowflake-trial-account walkthrough
   (PAT for the V12 agent; optional schema deploy for persistent
@@ -51,9 +51,20 @@ This file is always-on context for AI agents; keep it lean and current.
  what's already decided, and a concrete inventory for the next
  pending phase. Update its status table as phases complete.
 - `docs/HACKATHON_AGENTS.md` — the attendee-facing guide for the day:
- mint a fork, improve it, score it, publish it, league. Its companion
- `docs/AGENT_LOOP_PLAN.md` is the reasoning behind the tooling and
- tracks what's built vs still open.
+  mint a fork, improve it, score it, publish it, league. Its companion
+  `docs/AGENT_LOOP_PLAN.md` is the reasoning behind the tooling and
+  tracks what's built vs still open.
+- `docs/TEAM_LEADER_GUIDE.md` — the same day seen by the one person per
+  team who owns *sequence* rather than code: install → tutorial →
+  play → mint → publish empty → weapon shape → name the moves → the
+  three-track cycle → evaluate → final push → league, with a checkpoint
+  per stage. It deliberately does not restate mechanics
+  (HACKATHON_AGENTS.md wins on those); it owns ordering, the four
+  surfaces a weapon touches, and the appendix on why a minted agent does
+  or doesn't show up in the lab, the New Game modal and headless runs.
+  **`guide/leader.html` is the same document rendered** — a fan-out
+  pair, so change both. The HTML is self-contained (it must open off
+  disk) and sits beside `guide/index.html`, which links to it.
 
 ## Run & test
 
@@ -171,7 +182,7 @@ sea_of_colours/
                  so a turn can be replayed next to the card that produced it.
                  A static page loaded over file://, so it registers its data
                  with a <script> tag: never add a fetch(), it cannot work.
-                 Served at /battles/ too. scripts/_probe_battle_room.py drives
+                 Served at /battles/ too. backstage/probes/_probe_battle_room.py drives
                  it in a real browser — run that after touching room.html,
                  because a static page cannot report its own breakage.
   orchestrator_2/  Agent orchestration + the plug-in contract — see its README.md
@@ -248,8 +259,22 @@ scripts/         deploy_soc_schema.py, run_season*.py, run_evals.py, run_battery
                  here, not at four scripts. `season` supersedes run_season.py
                  for anything that needs a fork or an LLM seat — that script
                  is heuristic-only.
-  films/         the tutorial film rig — self-contained, see its README.md
 snowflake/       SOC_* schema, views, procedures, agent SQL
+backstage/       Everything that needs a browser, ffmpeg or a speech model
+                 (v1.47) — and **nothing the day needs**. Its deps live in
+                 backstage/requirements.txt, never the repo's, because
+                 Playwright is a ~120MB browser nobody installing at 9am is
+                 going to shoot a film with. pytest does not import it and
+                 passes without it; the boundary runs one way, so deleting
+                 the folder costs re-shooting and re-probing and nothing
+                 else. See its README.md.
+  films/         the tutorial film rig + the landing hero loop
+    voice/       neural voiceover (piper) — scripts in, narration out
+  probes/        ~30 browser harnesses: _fx_* geometry, _probe_* behaviour,
+                 _ui_* screenshots. These cover what a human would SEE,
+                 which pure-Python assertions cannot reach — a static page
+                 cannot report its own breakage. Kept out of pytest so the
+                 suite stays fast and dependency-free.
 ```
 
 Server flow: `server/app.py` → `sea_of_colours/snowpark/engine.py` → `game/*`.

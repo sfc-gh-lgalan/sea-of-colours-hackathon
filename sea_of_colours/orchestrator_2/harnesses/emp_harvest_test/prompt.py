@@ -1106,6 +1106,13 @@ def _assemble_doctrine(
     if scorch.stock(agent_view)["emp"] > 0:
         text += "\n\n" + doctrine.DOCTRINE_SCORCH
 
+    # v13 — DOCTRINE_SNAP gates on owning a SNAP charge, same as SCORCH gates
+    # on an EMP charge. Rung 1 for the third weapon shape: the LLM has to
+    # know how to spend what it holds. When ONLY SNAP is in the rack, this
+    # is the entire weapon doctrine the seat sees.
+    if scorch.stock(agent_view).get("snap", 0) > 0:
+        text += "\n\n" + doctrine.DOCTRINE_SNAP
+
     # FINAL NIGHT — supersede enemy probes. Gated to the ACTUAL final night
     # (A6): earlier nights must not see this or the agent starts declaring
     # "final night" and burning probes on denial while scouting still pays.

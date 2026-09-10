@@ -51,9 +51,10 @@ which remote you are publishing to, so run it early if you are unsure.
 > with it and your game dies mid-night. It looks exactly like the app
 > crashing. Open a terminal, run it yourself, and leave it running.
 
-Open <http://127.0.0.1:8000> and hit **Quick game** — that spawns you vs
-`RED_HARVEST_LITE` and drops you straight on the board. **Play** opens
-the launcher instead, if you want to choose the map, the seats or the
+Open <http://127.0.0.1:8000> and hit **Tutorial** — that offers Basic,
+Advanced, or **Quick game**, which spawns you vs `RED_HARVEST_LITE` and
+drops you straight on the board with no teaching. **Play** opens the
+launcher instead, if you want to choose the map, the seats or the
 opponent.
 
 **New here? Open [`guide/index.html`](guide/index.html) in a browser** —
@@ -295,7 +296,7 @@ need no Snowflake and no setup.
 | Preset | Board | Nights | Rules |
 | --- | --- | --- | --- |
 | Basic | 24×16 | 3 | no weapons, no signs |
-| Advanced | 24×16 | 3 | everything on |
+| Advanced | 24×16 | 4 | everything on |
 | Quick game | full 40×28 | 3 | everything on |
 
 Basic is a genuine subset, not a simulation: the engine refuses the
@@ -312,9 +313,9 @@ recorder:
 
 ```bash
 SOC_BACKEND=memory python run_web.py --no-reload --port 8022 &
-python scripts/films/make_tutorial_films.py --base http://127.0.0.1:8022
-python scripts/films/make_tutorial_films.py --list          # what there is
-python scripts/films/make_tutorial_films.py --only basic_drop   # just one
+python backstage/films/make_tutorial_films.py --base http://127.0.0.1:8022
+python backstage/films/make_tutorial_films.py --list          # what there is
+python backstage/films/make_tutorial_films.py --only basic_drop   # just one
 ```
 
 Each film drives the real UI in a real browser, so a film cannot show an
@@ -326,8 +327,8 @@ text and the turn each reel belongs to live in
 it does the trim, the camera moves and the compress in one pass, and
 falls back to the raw capture without it.
 
-The whole filming kit is contained in `scripts/films/` and nothing else
-in the repo imports any of it; `scripts/films/README.md` is the guide.
+The whole filming kit is contained in `backstage/films/` and nothing else
+in the repo imports any of it; `backstage/films/README.md` is the guide.
 
 ---
 
@@ -495,7 +496,16 @@ publishes a public URL *that this machine can actually resolve* —
 stable for the life of the process; the fallback is there because egress
 filtering on locked-down networks drops SSH or non-443 ports for some
 providers and not others, so between them almost every network is covered. `GET /api/tunnel/status` reports which one is carrying
-the tunnel, and whether its address is one that rotates.
+the tunnel, whether its address is one that rotates, and which providers
+lost on the way there — a silent downgrade onto the rotating fallback
+looks exactly like a clean start until the invite links start dying.
+
+A tunnel that dies is **restarted** (up to three times). That gives it a
+new address, so it kills the links already handed out, but a fresh link
+beats a dead server. The new URL is printed to this terminal, because
+every browser pointed at the tunnel is by then stranded on a hostname
+that no longer exists and cannot be told the new one by a server it can
+no longer reach.
 
 The resolve check is the important part, and the counter-intuitive bit is
 that it **waits before looking**. A hostname exists a couple of seconds

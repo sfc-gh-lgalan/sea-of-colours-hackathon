@@ -40,6 +40,33 @@ If none of them work you get a message saying why — naming every provider
 tried and what went wrong with each — and the button falls back to
 starting a local game rather than hanging.
 
+When a *later* provider wins, the ones it beat are kept in
+`status()["skipped"]` (provider, reason, and a bounded tail of what it
+actually printed). That exists because a silent downgrade onto the
+rotating fallback is indistinguishable from a clean start until the links
+begin to die, which is precisely when it is too late to be useful.
+
+### The time budget, and who is allowed to spend it
+
+Each provider is costed at **publish + accept**, because the DNS gate
+below is part of winning, not a free extra. The endpoint allows 75s in
+total and every attempt holds back a floor for the providers behind it —
+enough for them to *succeed*, deliberately not enough to fail slowly in.
+Two providers' worst cases add up to more than anyone will sit through, so
+reserving the worst case would starve the preferred provider out of
+existence; reserving the floor keeps Cloudflare's full 20s publish window
+while leaving localhost.run the 37s it needs to negotiate SSH and clear
+the gate.
+
+The preferred provider also gets a **second attempt**, funded strictly
+from budget nobody behind it is owed. So a provider that fails fast is
+retried — a fast failure is the kind that is plausibly a coin flip — and
+one that fails slowly has already had its second chance. The last
+provider is never retried: there is nothing behind it to protect.
+
+None of this is visible on the happy path, which is a URL at ~6s and an
+accepted name at ~18s. It only decides what happens on a bad day.
+
 ### Why the resolve check matters — and why it waits first
 
 Publishing a URL is not the same as being usable. A network can block a
@@ -134,6 +161,129 @@ stays as the fallback, since needing no install is genuinely valuable when
 invite modal says so and warns that the links can expire.
 `GET /api/tunnel/status` exposes this as `rotates` (known up front, from
 the provider) alongside `rotations` (how many have actually happened).
+
+## When the tunnel dies outright
+
+A rotation changes the address; a death removes it. The watchdog used to
+notice the subprocess had exited and simply retire, which put the game off
+the air permanently and silently at whatever hour the provider gave up.
+
+### Two deaths, and the one that actually happens
+
+A tunnel can fail in two shapes and they look nothing alike from here:
+
+| Shape | What we see | Detected in |
+| --- | --- | --- |
+| The client exits | `proc.poll()` returns | ≤0.5s |
+| The edge stops routing | process healthy, URL 503s | ~90s |
+
+The second is the one that took a real game off the air. `ssh` stayed up
+and cheerful for twelve minutes while localhost.run served 503 on a
+hostname it had already moved on from — `poll()` is `None` throughout, so
+watching the process teaches you nothing. That is why the liveness
+watchdog exists at all, and for a while it recorded `serving: false` and
+did nothing with it, which left the one failure we had genuinely observed
+as the one we did not repair.
+
+Both now restart the tunnel. They differ only in how much confirmation
+they need, and the asymmetry is deliberate: a process that has exited is
+not coming back, so there is nothing to gain by waiting, while a failed
+probe might be *our* network rather than the tunnel's. A false positive
+costs everyone their links, so a dead route needs `_ROUTE_DEAD_AFTER`
+consecutive failures — three, or ~90s at the 30s probe interval — before
+we act. By then the links are worthless anyway and there is nothing left
+to protect by waiting longer.
+
+One case is deliberately excluded: a tunnel that has **never** answered.
+Without a prior success we cannot tell a dead route from a probe path
+that never worked from this machine — a corporate resolver, say — and
+restarting on that would loop forever over a tunnel guests can reach
+perfectly well. So `serving` stays `null` ("can't tell") rather than
+`false`, and nothing fires.
+
+It now **restarts the tunnel**, up to three times. A restart means a new
+hostname, so it invalidates every link already handed out exactly as a
+rotation does — but a fresh link beats a dead server, and there is no way
+to keep an anonymous hostname across a process death.
+
+The new address is **printed to the server's terminal**, and that is the
+point rather than a nicety: when the tunnel dies, every browser pointed at
+it — including the host's, if they were playing through it — is stranded
+on a hostname that no longer exists, and cannot be told the new one by a
+server it can no longer reach. The console is the only channel left open.
+
+```
+[soc] tunnel died and was restarted (1/3). NEW ADDRESS — old invite links are dead:
+[soc]   https://sundry-words-here.trycloudflare.com
+```
+
+`GET /api/tunnel/status` carries the state as four fields that together
+separate the cases a host has to tell apart:
+
+| Fields | Meaning |
+| --- | --- |
+| `expected: false` | no tunnel was ever asked for |
+| `running: true` | up; `revivals` says how many deaths it has survived |
+| `reviving: true` | briefly down, coming back |
+| `expected: true`, not running, not reviving | down for good, out of restarts |
+
+`revivals` is kept until an explicit stop rather than cleared on the way
+down, because a host whose tunnel has finally died most needs to know it
+died three times first. Pressing MULTIPLAYER again gives it a fresh
+budget; that is a human deciding, which is the difference between a retry
+and a retry storm against someone else's free service.
+
+### What the players see, and why it has to be two things
+
+A restart splits the room in half, and the halves cannot help each other:
+
+- whoever is still connected — in practice the host, on localhost — is
+  holding the only working copy of the new address;
+- everyone who was playing through the old one is on a hostname that no
+  longer resolves and **cannot be told anything by the server**, because
+  reaching the server is exactly what they have lost.
+
+There is no push that fixes the second group, and no amount of cleverness
+invents one. So the recovery is a human passing one URL along, and the
+UI's whole job is to make that the only step. Both halves are the same
+component (`showTunnelDownModal`, `server/static/app.js`) because it is
+one event seen from two sides:
+
+| Mode | Who sees it | Trigger | What it offers |
+| --- | --- | --- | --- |
+| `restarted` | anyone still connected | `revivals` goes up | fresh per-seat links + QRs to send on |
+| `stranded` | anyone cut off | 20s offline on a tunnel origin | a box to paste the new address into |
+
+The asymmetry that makes this cheap: a seat link is
+`<origin>/play?session=<sid>&player=<seat>`, and **only the origin
+changes**. Session and seat are already in the stranded page's own URL —
+the half of the link that survived — so it can rebuild its own link from
+a bare address. The host never works out who needs which link, and the
+player never learns what a seat id is.
+
+Two details that are easy to get wrong:
+
+- **The offline banner must not promise recovery on a tunnel origin.** It
+  used to end "this page catches up on its own when it returns", which is
+  true for a LAN blip and a lie after a restart — that address never
+  returns, and a player who believes it waits forever for a server that
+  cannot answer. `_looksLikeTunnelOrigin()` decides, and it is a negative
+  test (not loopback, not a private range) rather than a list of the two
+  providers we ship, so a third provider fails safe instead of being
+  silently classified as a LAN game.
+- **The stranded modal clears itself if the connection comes back**, but
+  the host's link list does not. A warning that outlives its cause trains
+  people to ignore the next one; a list of links the host still has to
+  send has not stopped being true just because their own page is fine.
+
+**Verify with `backstage/probes/_probe_tunnel_down.py`.** It drives both halves in
+a real browser, using Chromium's `--host-resolver-rules` to put the page
+on a genuine tunnel-looking hostname pointed at the local server — the
+classifier is the thing under test, so `127.0.0.1` would not do. The
+scene that matters most is the last assertion: that pasting the new
+address lands the player back in **their own** seat. It joins as `p2` on
+purpose, because a bug that rebuilt the link from a default seat would
+pass as `p1` and be invisible.
 
 ## Same-Wi-Fi LAN play (usually not an option on managed laptops)
 

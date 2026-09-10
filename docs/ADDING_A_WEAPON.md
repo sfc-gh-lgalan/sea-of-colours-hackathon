@@ -298,10 +298,10 @@ and weapon-chip active-target states.
 - `scripts/fake_weapons_season.py` — one scripted night per weapon per
   seat; `scripts/fake_graphics_season.py` derives its weapons half from
   it, so adding a night there lengthens both reels automatically.
-- `scripts/_fx_aoe.py` (footprint parity vs the engine) and
-  `scripts/_fx_vision_geom.mjs` (the client's own shape maths) both
+- `backstage/probes/_fx_aoe.py` (footprint parity vs the engine) and
+  `backstage/probes/_fx_vision_geom.mjs` (the client's own shape maths) both
   enumerate the area-claiming actions by name.
-- `scripts/_fx_orbitpublic.py` — the station glyph. Note it **injects**
+- `backstage/probes/_fx_orbitpublic.py` — the station glyph. Note it **injects**
   the frame by rewriting the replay response, so it still covers the
   caltrop's archived-playback path even though nothing can emit one.
 

@@ -13,7 +13,7 @@ env/
 # Scratch output from the film harness. The shipped films themselves
 # (server/static/films/*.webm) ARE committed — an attendee unzips this
 # repo and plays, with no build step and no ffmpeg — but the generator
-# (scripts/films/) is what you edit. See
+# (backstage/films/) is what you edit. See
 # docs/TUTORIAL_PLAN.md §4.1.
 reports/films/
 reports/filmsheets/
@@ -52,7 +52,7 @@ secrets.toml
 /reports/*.csv
 /reports/*.log
 /reports/baseline_*.md
-# Screenshots shot by the scratch harnesses (scripts/_fx_*.py). Regenerable by
+# Screenshots shot by the scratch harnesses (backstage/probes/_fx_*.py). Regenerable by
 # re-running the harness, and several MB a session. The frozen/*.json fixtures
 # under reports/ are deliberately tracked and unaffected by this.
 /reports/**/*.png
@@ -108,3 +108,16 @@ turnlab/data/*
 # has changed — so a parcel left in the repo root would block the
 # push it has nothing to do with.
 *.socfork
+
+# Film voiceover intermediates (backstage/films/voice/). Same argument as
+# the films themselves: the narration that ships is muxed into the
+# committed .webm, so the per-line .wav clips are build scratch.
+#
+# The voice models are excluded for a different reason — they are ~60MB
+# of ONNX weights fetched from upstream, identical for everyone, and
+# re-downloadable in one command. What IS tracked is the scripts/
+# directory of narration text, because that is written by a human and is
+# the only part nothing can regenerate.
+backstage/films/voice/models/
+backstage/films/voice/clips/
+backstage/films/voice/build/

@@ -121,13 +121,13 @@ mid-redesign and mines are being removed; a screen capture taken today is
 wrong within a week, and nobody re-records by hand. Films must be
 reproducible by running a script.
 
-The machinery is close to already built. `scripts/_fx_*.py` — sixteen
+The machinery is close to already built. `backstage/probes/_fx_*.py` — sixteen
 harnesses today — already boot a memory-backend server, seed a season,
 drive the real UI and take screenshots. Playwright is installed and its
 `new_context(record_video_dir=...)` is available, so the same harness
 pattern records `webm` instead of stills.
 
-**Proposed:** `scripts/films/make_tutorial_films.py`, one function per film,
+**Proposed:** `backstage/films/make_tutorial_films.py`, one function per film,
 sharing the `_fx_*` seeding helpers. Output committed to
 `server/static/films/*.webm`. Re-run after any UI change that a film
 shows.
@@ -280,7 +280,7 @@ is what lets a stale tooltip be found when a control is renamed.
 
 `scripts/_film_drop.py` proved the pipeline end to end. Output:
 11.6s, 1.4 MB `webm`. The script itself is **deleted** — everything it
-established was folded into `scripts/films/make_tutorial_films.py`, and a
+established was folded into `backstage/films/make_tutorial_films.py`, and a
 second, diverging copy of the cursor kit was the obvious way for the two
 to drift. This section is the record of what it taught.
 
@@ -326,8 +326,8 @@ What it exposed, all now folded into §4.3 above:
   `app.js` and coupled to it by exactly one DOM event. A missing film
   degrades to its prose; a broken modal cannot break a season.
 - **Nine Basic films**, in `server/static/films/`, shot by
-  `scripts/films/make_tutorial_films.py` and committed.
-- **`scripts/films/_fx_tutorial.py`** — the end-to-end check. Asserts the
+  `backstage/films/make_tutorial_films.py` and committed.
+- **`backstage/films/_fx_tutorial.py`** — the end-to-end check. Asserts the
   preset reaches the board, that no weapon control is *visible*, that
   the film actually plays (rather than 404ing into the placeholder),
   and that the reel **refreshes on the next turn**, which is the part
@@ -505,7 +505,7 @@ and three of those do not fit in three nights.
 costs nothing. Advanced's do not: it needs one bright blue smear to
 hot-drop into and two pure seams far enough apart to be one each, and
 the generator supplies that combination on roughly **10 seeds in 400**
-(`scripts/films/_probe_advseed.py` searches for it). An Advanced game that
+(`backstage/films/_probe_advseed.py` searches for it). An Advanced game that
 happens not to have it does not teach a slightly worse lesson — it
 teaches that the mode is broken.
 
@@ -749,7 +749,7 @@ payment arriving.
 
 Every film added here is an argument about numbers — "waiting five
 hours is worth more than five hours of walking" — and an argument about
-numbers is a thing you can check for free. `scripts/films/_probe_tactics.py`
+numbers is a thing you can check for free. `backstage/films/_probe_tactics.py`
 runs each scenario through the real engine over HTTP and prints the
 hold, the harvester's state and the hour-by-hour log. A take costs two
 or three minutes; the probe costs one second.
@@ -798,7 +798,7 @@ and says "255 × 3.0 = 765" out loud, then walks a named six-square seam.
 So it pins seed 14 (`BASIC_DROP_SEED`) while every other Basic film
 still runs on the batch seed.
 
-`scripts/films/_probe_basicseed.py` found it, searching for the one
+`backstage/films/_probe_basicseed.py` found it, searching for the one
 combination the generator will not promise: one of each RED tier close
 enough together to tour with a cursor, beside a six-square *orthogonal*
 RED chain. Seed 14 puts the quartet in a 2-square spread and ends the

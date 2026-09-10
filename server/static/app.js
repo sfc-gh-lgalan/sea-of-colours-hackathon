@@ -13766,13 +13766,13 @@
     }
   }
 
-  /** Test hook for scripts/_fx_aoe.py. Aiming an order normally takes a
+  /** Test hook for backstage/probes/_fx_aoe.py. Aiming an order normally takes a
    *  live game, an armed chip and a real pointer; this lets the harness set
    *  the same three things directly and read the drawn shapes back. The
    *  `footprint` entry is the one that matters most — it is diffed against
    *  the engine's own AoE helpers, which is the check that catches the
    *  client's copy of a radius drifting from the rules. */
-  /** Test hook for scripts/_fx_orders.py. The ORDERS panel's own state
+  /** Test hook for backstage/probes/_fx_orders.py. The ORDERS panel's own state
    *  is the queue, so the harness composes one directly rather than
    *  driving twenty clicks — what it is checking is the RENDER (column
    *  alignment, the overdraft note, the stranding sticker), not the
@@ -13839,7 +13839,7 @@
     ),
   };
 
-  /** Test hook for scripts/_fx_vision.py. Lets a harness paint a hand-built
+  /** Test hook for backstage/probes/_fx_vision.py. Lets a harness paint a hand-built
    *  board and read back the rings, so the awkward cases (two seats
    *  overlapping, a rival disk clipped by the board edge, a hole in your own
    *  vision) can be checked on demand instead of waiting for a season to
@@ -22048,6 +22048,14 @@
     // visible failure anywhere. Only shown when we are actually on a
     // rotating tunnel — a Cloudflare tunnel keeps its name for the whole
     // session, and a LAN or loopback game has nothing to warn about.
+    //
+    // v1.46 — the remedy sentence used to be a guess, and it guessed
+    // wrong in the one case that cost a live game: it read "rotating
+    // provider" as "cloudflared is missing" and told a host with
+    // cloudflared already installed to go and install it. That reads as
+    // "unavoidable on your setup" when the true answer was "try again".
+    // ``skipped`` now carries why the stable provider lost, so the advice
+    // can be derived instead of assumed.
     const expiry = document.createElement("div");
     expiry.className = "cc-share-expiry";
     expiry.hidden = true;
@@ -22057,14 +22065,45 @@
         const r = await fetch("/api/tunnel/status", { cache: "no-store" });
         if (!r.ok) return;
         const t = await r.json();
+        // v1.46 — a tunnel that died and came back has a *new* hostname,
+        // so every link handed out before it is as dead as after a
+        // rotation. Same warning, different cause, and worth saying out
+        // loud on the card that hands links out: the host is about to
+        // share again and needs to know the old ones are gone.
+        if (t.running && t.url && t.revivals > 0
+            && window.location.origin === new URL(t.url).origin) {
+          expiry.textContent =
+            `! heads up — the tunnel dropped and restarted `
+            + `${t.revivals} time${t.revivals === 1 ? "" : "s"}, so it has a `
+            + `new address and any link you shared earlier is dead. `
+            + `Re-share the links below.`;
+          expiry.hidden = false;
+          return;
+        }
         if (!t.running || !t.rotates || !t.url) return;
         if (window.location.origin !== new URL(t.url).origin) return;
+        const stable = (t.providers || []).find((p) => p !== t.provider);
+        const lost = (t.skipped || []).find((s) => s && s.provider === stable);
+        let remedy;
+        if (lost) {
+          // Installed and tried, so retrying is the honest advice: the
+          // failures we fall through on (no URL in time, a name the host
+          // can't resolve yet) are overwhelmingly transient.
+          remedy = `${stable} is installed and was tried first, but `
+            + `${lost.error || "it failed"}. Clicking MULTIPLAYER again `
+            + `often gets it, and that address lasts as long as the server.`;
+        } else if (stable) {
+          remedy = `${stable} is installed and would keep one address for `
+            + `the whole session — click MULTIPLAYER again to try for it.`;
+        } else {
+          remedy = `Installing cloudflared avoids it: that address lasts as `
+            + `long as the server runs.`;
+        }
         expiry.textContent =
           `! heads up — these links come from ${t.provider}, which changes `
           + `its address after a while (we've measured ~13 min). If a guest `
           + `suddenly can't connect, click MULTIPLAYER again and re-share. `
-          + `Installing cloudflared avoids it: that address lasts as long as `
-          + `the server runs.`;
+          + remedy;
         expiry.hidden = false;
       } catch (_e) {
         /* the warning is a nicety — never block the invite on it */
@@ -22289,6 +22328,399 @@
   let liveSyncTimer = null;
   let liveSyncSig = "";
   let liveSyncBusy = false;
+  // v1.46 — consecutive failed polls before we admit it out loud. The
+  // poller runs every ~2.5s, so three is ~7.5s: long enough that a single
+  // dropped request or a Snowflake hiccup never surfaces, short enough
+  // that a player who has already locked in isn't left reading "waiting
+  // for other players" while the connection is quietly gone. That was a
+  // real outage: a multiplayer tunnel stopped routing, every poll failed,
+  // and the catch below swallowed all of them — so the committed-wait
+  // frame (which locks the button, by design) became indistinguishable
+  // from legitimately waiting on a slow teammate, in every browser at
+  // once. Nobody could see the cause, so everyone blamed each other.
+  // Two conditions, and it needs both, because the outage has two very
+  // different shapes. A refused connection or a 503 from a tunnel edge
+  // fails instantly, so counting is enough. A hung request — the edge
+  // accepts and then never answers — only fails when its deadline
+  // expires, so a pure count would take half a minute to notice. Hence a
+  // clock as well: "we have not heard from the server since" is the thing
+  // actually worth reporting, and it is true in both shapes.
+  const _LIVE_SYNC_OFFLINE_AFTER = 2;
+  const _LIVE_SYNC_OFFLINE_MS = 7000;
+  // How long a single poll may take before we call it lost. Generous
+  // against the ~1s a /status costs on Snowflake, because a false
+  // "connection lost" on a merely slow warehouse would be its own bug —
+  // but finite, which is the point: an unbounded fetch is what let one
+  // stuck request retire the poller for the rest of the session.
+  const _LIVE_SYNC_TIMEOUT_MS = 5000;
+  let liveSyncFails = 0;
+  let _liveSyncOkAt = 0;
+  let _liveSyncOffline = false;
+
+  // v1.46 — how long an outage runs before we stop calling it a blip.
+  // The banner's job is "hold on"; past this the honest reading changes,
+  // because a tunnel that restarts comes back on a *different* hostname
+  // and this page's address is then gone for good. Waiting quietly for a
+  // server that can never answer is the failure mode, and 20s is long
+  // enough that a warehouse hiccup or a walk past a lift shaft doesn't
+  // trigger it.
+  const _STRANDED_AFTER_MS = 20000;
+  // How often a *connected* page checks whether the tunnel changed under
+  // it. Cheap (a local status read), and only runs in multiplayer.
+  const _TUNNEL_WATCH_MS = 15000;
+  let _tunnelWatchTimer = null;
+  let _seenRevivals = null;
+  let _tunnelModalUp = false;
+
+  /** An abort signal that fires after ``ms``, plus the way to stand it down.
+   *
+   *  Hand-rolled rather than ``AbortSignal.timeout`` so this keeps working
+   *  on the older Safari an attendee may well be holding. The caller must
+   *  call ``done()`` in a finally: a poll runs every 2.5s for a whole
+   *  season, so a timer left pending on every successful one is a leak. */
+  function _deadline(ms) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), ms);
+    return { signal: ac.signal, done: () => clearTimeout(t) };
+  }
+
+  /** Record whether a poll reached the server, and surface a sustained
+   *  outage. Only repaints on a *transition*, so the 500ms wait ticker
+   *  isn't fighting a headline rewrite on every pass. */
+  function _noteLiveSyncResult(ok) {
+    const now = Date.now();
+    if (ok) {
+      liveSyncFails = 0;
+      _liveSyncOkAt = now;
+      if (_liveSyncOffline) {
+        _liveSyncOffline = false;
+        _paintWaitHeadline();
+        _paintLiveSyncOffline();
+        // v1.46 — we were wrong about being stranded, so take the modal
+        // away rather than leave a dead-end prompt over a working game.
+        // A warning that outlives its cause teaches people to ignore it.
+        // Only the stranded half: the "restarted" one is a list of links
+        // the host still has to send, and it has not stopped being true
+        // just because *their* connection is fine.
+        const stale = document.getElementById("cc-tunnel-down");
+        if (stale && stale.dataset.mode === "stranded" && stale.parentNode) {
+          stale.parentNode.removeChild(stale);
+          _tunnelModalUp = false;
+        }
+      }
+      return;
+    }
+    liveSyncFails += 1;
+    // First failure of a run has no "last good" to measure from if the
+    // very first poll failed, so seed it rather than reporting an outage
+    // stretching back to 1970.
+    if (!_liveSyncOkAt) _liveSyncOkAt = now;
+    const silentFor = now - _liveSyncOkAt;
+    if (
+      !_liveSyncOffline
+      && liveSyncFails >= _LIVE_SYNC_OFFLINE_AFTER
+      && silentFor >= _LIVE_SYNC_OFFLINE_MS
+    ) {
+      _liveSyncOffline = true;
+      _paintWaitHeadline();
+      _paintLiveSyncOffline();
+    }
+    // Checked every failed poll, not just on the transition above: the
+    // escalation is on a *clock*, so it has to be re-tested as the clock
+    // runs. Hanging it off the transition would mean it fired only if the
+    // outage happened to begin at the 20s mark, i.e. never.
+    _maybeStranded();
+  }
+
+  /** Page-level "we can't reach the server" banner.
+   *
+   *  v1.46 — the committed-wait headline is not enough on its own, because
+   *  that overlay is built by the submit handler and does not survive a
+   *  reload. Anyone who reloaded — onto a fresh invite link after a tunnel
+   *  rotation, most obviously — has already-submitted orders on the server
+   *  and no overlay on their screen, and every other thing they can see is
+   *  painted from the last successful poll, so it simply freezes at
+   *  whatever it last said. Same for a player still plotting: they find out
+   *  only when TRANSMIT fails.
+   *
+   *  So this is drawn from our own counter and nothing else. It is the one
+   *  thing on the page that can still speak when the payload can't, which
+   *  is exactly when it is needed. The reassurance is load-bearing rather
+   *  than decorative: game state is server-authoritative and already
+   *  persisted, so a player who sent orders really has not lost them, and
+   *  the instinct this prevents is the one where they reload, re-plan and
+   *  re-send a turn they had already committed. */
+  function _paintLiveSyncOffline() {
+    let el = document.getElementById("cc-offline-banner");
+    if (!_liveSyncOffline) {
+      if (el) el.hidden = true;
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "cc-offline-banner";
+      el.className = "cc-offline-banner";
+      document.body.appendChild(el);
+    }
+    // v1.46 — the second sentence used to promise unconditionally that
+    // the page "catches up on its own when it returns". For a blip that
+    // is true and worth saying. For a tunnel that has died it is a lie
+    // with consequences: the restart comes back on a new hostname, so
+    // *this* address never returns, and a player who believes the promise
+    // sits waiting for a server that cannot ever answer them. Only claim
+    // recovery where recovery is actually possible.
+    el.textContent = _looksLikeTunnelOrigin()
+      ? "! CONNECTION LOST — can't reach the server. Anything you have "
+        + "already sent is safe."
+      : "! CONNECTION LOST — can't reach the server. Anything you have "
+        + "already sent is safe; this page catches up on its own when it "
+        + "returns.";
+    el.hidden = false;
+  }
+
+  /** Is this page being served over a public tunnel rather than locally?
+   *
+   *  v1.46 — decides whether an outage can be waited out. A loopback or
+   *  LAN address is fixed, so the server coming back is the same server
+   *  at the same place; a tunnel hostname is leased, and a tunnel that
+   *  restarts gets a different one. The distinction is the difference
+   *  between "hold on" and "this address is gone, here is how to get
+   *  back".
+   *
+   *  Deliberately a negative test — not localhost, not a private range —
+   *  rather than matching the two providers we ship. Naming hostnames
+   *  would leave a third provider silently classified as a LAN game,
+   *  which fails in the direction that strands people. */
+  function _looksLikeTunnelOrigin() {
+    const h = String(window.location.hostname || "").toLowerCase();
+    if (!h) return false;
+    if (h === "localhost" || h.endsWith(".local") || h === "::1") return false;
+    if (/^127\./.test(h)) return false;
+    if (/^10\./.test(h)) return false;
+    if (/^192\.168\./.test(h)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
+    return true;
+  }
+
+  /** The session this page belongs to, whichever way it was opened. */
+  function _currentSessionId() {
+    return sessionId || WATCH_SESSION_ID || _watchParams.get("session") || "";
+  }
+
+  /** The "your tunnel changed" modal, in its two halves.
+   *
+   *  v1.46 — one component because it is one event seen from two sides,
+   *  and the sides cannot help each other. When a tunnel restarts it
+   *  comes back on a new hostname, which means:
+   *
+   *  - whoever is still connected (in practice the host, on localhost)
+   *    holds the only working copy of the new address, and
+   *  - everyone who was playing through the old one is stranded on a
+   *    hostname that no longer resolves, and cannot be *told* anything
+   *    by a server they can no longer reach.
+   *
+   *  So there is no push, and no amount of cleverness invents one — the
+   *  recovery is a human passing one URL along. What the UI can do is
+   *  make that the only step: the host gets links ready to send, the
+   *  stranded player gets a box to paste one into. Everything else about
+   *  a seat link (session, seat) is already known to both ends, so the
+   *  host never has to work out who needs which link and the player
+   *  never has to understand seats.
+   *
+   *  ``mode``:
+   *    "restarted" — we can reach the server; show fresh links to send on.
+   *    "stranded"  — we cannot; show the way back in. */
+  function showTunnelDownModal(mode) {
+    if (_tunnelModalUp) return;
+    const sid = _currentSessionId();
+    if (!sid) return;
+    _tunnelModalUp = true;
+
+    const overlay = document.createElement("div");
+    overlay.className = "cc-share-overlay cc-tunnel-down";
+    overlay.id = "cc-tunnel-down";
+    overlay.dataset.mode = mode;
+    const card = document.createElement("div");
+    card.className = "cc-share-card";
+    const title = document.createElement("div");
+    title.className = "cc-share-title cc-tunnel-down-title";
+    const sub = document.createElement("div");
+    sub.className = "cc-share-sub";
+    card.appendChild(title);
+    card.appendChild(sub);
+
+    const close = () => {
+      _tunnelModalUp = false;
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    };
+
+    if (mode === "restarted") {
+      title.textContent = "// TUNNEL RESTARTED";
+      sub.textContent =
+        "The public tunnel dropped and came back on a new address, so every "
+        + "link you handed out before now is dead. Send these instead — "
+        + "everyone keeps their seat and anything they already submitted.";
+      // Null on purpose: the helper falls back to the page-level player
+      // and agent maps, which is what we want here — this can fire in the
+      // gap between polls, when there is no fresh status to read from.
+      const seats = humanSeatsFromState(null) || [];
+      seats.forEach((seat, ix) => {
+        const link = shareLinkFor(sid, seat);
+        const row = document.createElement("div");
+        row.className = "cc-share-row";
+        const top = document.createElement("div");
+        top.className = "cc-share-row-top";
+        const tag = document.createElement("span");
+        tag.className = "cc-share-seat";
+        tag.style.setProperty("--cc-seat", ownerColour(seat));
+        tag.textContent = `${playerTag(seat)} · ${playerDisplayName(seat)}${
+          seat === MY_SEAT ? " (you)" : ""
+        }`;
+        const input = document.createElement("input");
+        input.className = "cc-share-input";
+        input.readOnly = true;
+        input.value = link;
+        input.addEventListener("focus", () => input.select());
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "cc-share-copy";
+        copyBtn.textContent = "COPY";
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(link);
+            copyBtn.textContent = "COPIED";
+            setTimeout(() => (copyBtn.textContent = "COPY"), 1200);
+          } catch (_e) {
+            input.select();
+          }
+        });
+        top.appendChild(tag);
+        top.appendChild(input);
+        top.appendChild(copyBtn);
+        row.appendChild(top);
+        const qr = document.createElement("div");
+        qr.className = "cc-share-qr";
+        renderQrInto(qr, link);
+        row.appendChild(qr);
+        card.appendChild(row);
+        void ix;
+      });
+    } else {
+      title.textContent = "// TUNNEL DOWN";
+      sub.textContent =
+        "This game's public address has stopped answering. If the host's "
+        + "tunnel restarted it is now on a different address, and this one "
+        + "will not come back. Your orders are safe on the server and your "
+        + "seat is still yours.";
+      const how = document.createElement("div");
+      how.className = "cc-share-sub cc-tunnel-down-how";
+      how.textContent =
+        "Ask the host for the new address — it is printed in the terminal "
+        + "running the game — and paste it here. You will land back in your "
+        + "own seat.";
+      card.appendChild(how);
+
+      const row = document.createElement("div");
+      row.className = "cc-share-row-top";
+      const input = document.createElement("input");
+      input.className = "cc-share-input";
+      input.placeholder = "https://something.trycloudflare.com";
+      input.setAttribute("aria-label", "New game address");
+      const go = document.createElement("button");
+      go.className = "cc-share-copy";
+      go.textContent = "REJOIN";
+      const err = document.createElement("div");
+      err.className = "cc-tunnel-down-err";
+      err.hidden = true;
+
+      const attempt = () => {
+        // Rebuild *our* seat link from whatever they pasted. The host
+        // only ever has to pass on the bare address; session and seat
+        // come from this page, which is the half of the link that
+        // survived. Accepts a bare hostname too — people paste what they
+        // see, and refusing "foo.trycloudflare.com" on a technicality
+        // would be a poor way to end a game.
+        const raw = String(input.value || "").trim();
+        if (!raw) return;
+        let target;
+        try {
+          target = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+        } catch (_e) {
+          err.textContent = "! that doesn't look like an address";
+          err.hidden = false;
+          return;
+        }
+        err.hidden = true;
+        window.location.href = buildSeatUrl(target.origin, sid, MY_SEAT);
+      };
+      go.addEventListener("click", attempt);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") attempt();
+      });
+      row.appendChild(input);
+      row.appendChild(go);
+      card.appendChild(row);
+      card.appendChild(err);
+    }
+
+    const dismiss = document.createElement("button");
+    dismiss.className = "cc-share-copy cc-tunnel-down-dismiss";
+    dismiss.textContent = mode === "restarted" ? "DONE" : "DISMISS";
+    dismiss.addEventListener("click", close);
+    card.appendChild(dismiss);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  /** Escalate a long outage on a tunnel origin into the modal.
+   *
+   *  Only on a tunnel origin: a LAN or loopback game genuinely does
+   *  recover on its own, and throwing a "paste a new address" box at
+   *  someone whose server is merely restarting would be noise. */
+  function _maybeStranded() {
+    if (_tunnelModalUp || !_liveSyncOffline) return;
+    if (!_looksLikeTunnelOrigin()) return;
+    if (Date.now() - _liveSyncOkAt < _STRANDED_AFTER_MS) return;
+    showTunnelDownModal("stranded");
+  }
+
+  /** Watch, from a page that can still reach the server, for the tunnel
+   *  being replaced underneath it.
+   *
+   *  ``revivals`` only ever goes up within a tunnel's life and is reset
+   *  by an explicit stop, so a change is the event. The first reading
+   *  seeds rather than fires: a page opened *after* a restart should not
+   *  be told about a restart it never experienced. */
+  async function _pollTunnelWatch() {
+    try {
+      const r = await fetch("/api/tunnel/status", { cache: "no-store" });
+      if (!r.ok) return;
+      const t = await r.json();
+      const n = Number(t.revivals || 0);
+      if (_seenRevivals === null) {
+        _seenRevivals = n;
+        return;
+      }
+      if (n > _seenRevivals) {
+        _seenRevivals = n;
+        showTunnelDownModal("restarted");
+      }
+    } catch (_e) {
+      /* offline is the other path's problem, not this one's */
+    }
+  }
+
+  function startTunnelWatch() {
+    if (_tunnelWatchTimer || !_multiHumanGame) return;
+    _tunnelWatchTimer = window.setInterval(_pollTunnelWatch, _TUNNEL_WATCH_MS);
+    _pollTunnelWatch();
+  }
+
+  function stopTunnelWatch() {
+    if (_tunnelWatchTimer) window.clearInterval(_tunnelWatchTimer);
+    _tunnelWatchTimer = null;
+  }
   /** v1.7 — last-seen day / phase / replay-window count, so the poller can
    *  tell a real night/orbit RESOLUTION (day rolled, phase flipped, or new
    *  night frames landed) apart from a mere opponent lock (pending flip).
@@ -22317,6 +22749,10 @@
     liveSyncWindows = 0;
     liveSyncTimer = window.setInterval(pollLiveSync, 2500);
     void seedLiveSyncBaseline();
+    // v1.46 — same lifetime as live-sync: both exist only for a game with
+    // other humans in it, and a tunnel changing under a solo game is
+    // nobody's problem.
+    startTunnelWatch();
   }
 
   /** v1.17 — record the pre-resolve state as the live-sync baseline.
@@ -22361,6 +22797,7 @@
     }
     const strip = document.getElementById("cc-waiting-strip");
     if (strip) strip.hidden = true;
+    stopTunnelWatch();
   }
 
   // v1.17 — come back to the tab and see the night immediately, rather than
@@ -22414,12 +22851,29 @@
     if (liveSyncBusy || inFlightSubmit || _liveFxPlaying) return;
     if (document.hidden) return;
     liveSyncBusy = true;
+    let _pollDeadline = null;
     try {
+      // v1.46 — a deadline, and this is the load-bearing half of the fix.
+      // ``liveSyncBusy`` is released in the finally below, so it is only
+      // ever released if this promise SETTLES. A request that hangs — the
+      // signature of a tunnel whose edge accepts the connection and then
+      // never answers — leaves the latch stuck true, and every later tick
+      // then returns at the guard above. Measured: one poll attempted in
+      // fourteen seconds of outage, against the five the 2.5s interval
+      // should have produced. So live-sync did not degrade, it stopped,
+      // permanently, on the first hung request — which is why pages did
+      // not recover on their own even when the connection came back.
       const res = await fetch(`/api/game/${sessionId}/status`, {
         cache: "no-store",
+        signal: (_pollDeadline = _deadline(_LIVE_SYNC_TIMEOUT_MS)).signal,
       });
-      if (!res.ok) return;
+      // A non-ok response counts as unreachable, and it is not a corner
+      // case: a tunnel whose edge has stopped routing answers 503 to every
+      // poll forever, which used to land on this bare `return` and vanish
+      // without even reaching the catch below.
+      if (!res.ok) { _noteLiveSyncResult(false); return; }
       const st = await res.json();
+      _noteLiveSyncResult(true);
       renderWaitingStrip(st);
       renderAgentThinking(st);
       // Keep the committed "waiting for players" overlay's who-list fresh.
@@ -22506,8 +22960,13 @@
         await refreshStatus();
       }
     } catch (_e) {
-      /* transient — retry next tick */
+      // Still "retry next tick" — that is right for a blip and this loop
+      // must never throw. v1.46: but count it, because "transient" was an
+      // assumption with nothing to test it against, and a dead tunnel
+      // fails here identically to a dropped packet, forever.
+      _noteLiveSyncResult(false);
     } finally {
+      _pollDeadline?.done?.();
       liveSyncBusy = false;
     }
   }
@@ -22544,7 +23003,15 @@
     const recapHead = document.querySelector(".cc-resolving-recap-head");
     if (!recapHead) return;
     let txt;
-    if (_waitHumans.length) {
+    if (_liveSyncOffline) {
+      // v1.46 — outranks every branch below, because all of them describe
+      // who we are waiting for, and we have not heard from the server in
+      // long enough that any such claim is a stale guess stated as fact.
+      // Naming the connection is the whole point: the player is locked in
+      // and cannot act, so the only useful thing we can tell them is that
+      // the silence is ours and not their opponent's.
+      txt = "! CONNECTION LOST — can't reach the server · retrying…";
+    } else if (_waitHumans.length) {
       txt = `LOCKED IN — waiting for ${_waitHumans.join(", ")}`;
     } else if (_waitAgent) {
       const a = String(_waitAgent.agent || "agent").toUpperCase();

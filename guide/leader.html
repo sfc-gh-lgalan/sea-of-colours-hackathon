@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sea_of_colours · team leader's guide</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=VT323&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ══ tokens — copied from manual/manual.css so the leader guide,
+         the attendee guide and the manual sit together without a seam.
+         Self-contained on purpose: this page has to open off disk,
+         before Python works, in a hotel lobby, on someone's phone. ══ */
+      :root {
+        --bg: #0d0d12;
+        --panel-bg: #0d0d12;
+        --panel-raise: #131319;
+        --fg: #f0f6fc;
+        --dim: #a8b1bd;
+        --frame: #4a4a5a;
+        --frame-soft: #2a2a35;
+
+        --green: #4dca5e;
+        --red: #ff8585;
+        --blue: #7ab8ff;
+        --amber: #ffc857;
+        --cyan: #5fe3d0;
+
+        --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas',
+          'Menlo', ui-monospace, monospace;
+        --retro: 'VT323', 'JetBrains Mono', ui-monospace, monospace;
+
+        --topbar-h: 34px;
+        --nav-h: 40px;
+      }
+
+      * { box-sizing: border-box; }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: calc(var(--topbar-h) + var(--nav-h) + 18px);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a { color: var(--blue); text-decoration: none; border-bottom: 1px dotted currentColor; }
+      a:hover { color: var(--green); }
+      b, strong { font-weight: 500; color: var(--fg); }
+      code { color: var(--amber); font-size: 0.94em; }
+      .dim { color: var(--dim); }
+      .fg-green { color: var(--green); }
+      .fg-red { color: var(--red); }
+      .fg-amber { color: var(--amber); }
+
+      /* ══ top bar ══════════════════════════════════════════════════ */
+      .gd-topbar {
+        position: fixed; inset: 0 0 auto 0; height: var(--topbar-h);
+        display: flex; align-items: center; gap: 0.5ch; padding: 0 14px;
+        background: var(--panel-bg); border-bottom: 1px solid var(--frame);
+        font-size: 13px; z-index: 60;
+      }
+      .prompt-sigil { color: var(--green); }
+      .prompt-caret { color: var(--green); animation: gd-blink 1.1s steps(2, start) infinite; }
+      @keyframes gd-blink { to { opacity: 0; } }
+      .gd-spacer { flex: 1; }
+      .gd-topbar a.gd-link {
+        border: 1px solid var(--frame); color: var(--dim);
+        padding: 2px 9px; font-size: 12px; letter-spacing: 0.04em;
+      }
+      .gd-topbar a.gd-link:hover { color: var(--green); border-color: var(--green); }
+      @media (max-width: 720px) { .gd-topbar .gd-hide-sm { display: none; } }
+
+      /* ══ progress ═════════════════════════════════════════════════ */
+      .gd-progress {
+        position: fixed; top: var(--topbar-h); left: 0; height: 2px;
+        width: 0%; background: var(--green); z-index: 61; transition: width .1s linear;
+      }
+
+      /* ══ stage nav ════════════════════════════════════════════════ */
+      .gd-nav {
+        position: fixed; top: var(--topbar-h); inset-inline: 0; height: var(--nav-h);
+        display: flex; align-items: center; gap: 6px; padding: 0 12px;
+        background: var(--panel-bg); border-bottom: 1px solid var(--frame-soft);
+        overflow-x: auto; scrollbar-width: none; z-index: 55;
+      }
+      .gd-nav::-webkit-scrollbar { display: none; }
+      .gd-nav a {
+        border: 1px solid transparent; color: var(--dim); white-space: nowrap;
+        padding: 3px 8px; font-size: 12px;
+      }
+      .gd-nav a:hover { color: var(--fg); border-color: var(--frame-soft); }
+      .gd-nav a.is-active { color: var(--green); border-color: var(--green); }
+
+      /* ══ layout ═══════════════════════════════════════════════════ */
+      .gd-wrap {
+        max-width: 880px; margin: 0 auto;
+        padding: calc(var(--topbar-h) + var(--nav-h) + 40px) 20px 140px;
+      }
+      .gd-scene { margin: 0 0 68px; scroll-margin-top: 90px; }
+      .gd-kicker {
+        color: var(--dim); font-size: 12px; letter-spacing: .18em;
+        text-transform: uppercase; margin: 0 0 6px;
+      }
+      h1 {
+        font-family: var(--retro); font-size: 44px; line-height: 1.05;
+        margin: 0 0 10px; letter-spacing: .01em; font-weight: 400;
+      }
+      h2 {
+        font-size: 20px; margin: 0 0 14px; font-weight: 500;
+        border-bottom: 1px solid var(--frame-soft); padding-bottom: 8px;
+      }
+      h3 { font-size: 15px; margin: 26px 0 8px; font-weight: 500; color: var(--fg); }
+      p { margin: 0 0 13px; }
+      .gd-lede { color: var(--dim); font-size: 15px; }
+      ul, ol { margin: 0 0 13px; padding-left: 22px; }
+      li { margin: 0 0 6px; }
+
+      /* ══ terminal block ═══════════════════════════════════════════ */
+      .gd-term {
+        position: relative; background: #08080c; border: 1px solid var(--frame-soft);
+        border-left: 2px solid var(--frame); padding: 12px 14px; margin: 0 0 15px;
+        overflow-x: auto;
+      }
+      .gd-term pre { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre; }
+      .gd-term .s { color: var(--green); }
+      .gd-term .c { color: var(--dim); }
+      .gd-term .o { color: var(--dim); }
+      .gd-term .k { color: var(--blue); }
+      .gd-term .pass { color: var(--green); }
+      .gd-term .fail { color: var(--red); }
+      .gd-copy {
+        position: absolute; top: 6px; right: 6px; background: transparent;
+        border: 1px solid var(--frame-soft); color: var(--dim);
+        font-family: var(--mono); font-size: 11px; padding: 1px 7px; cursor: pointer;
+      }
+      .gd-copy:hover { color: var(--green); border-color: var(--green); }
+
+      /* ══ frames, checkpoints, notes ═══════════════════════════════ */
+      .gd-frame {
+        border: 1px solid var(--frame-soft); background: var(--panel-raise);
+        padding: 14px 16px; margin: 0 0 16px;
+      }
+      .gd-frame-head {
+        display: flex; align-items: center; gap: 8px;
+        margin: -14px -16px 12px; padding: 7px 14px;
+        border-bottom: 1px solid var(--frame-soft); background: #101017;
+      }
+      .gd-frame-title { color: var(--dim); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+
+      .gd-check {
+        display: flex; gap: 10px; align-items: flex-start;
+        border-left: 2px solid var(--green); background: rgba(77,202,94,.05);
+        padding: 10px 14px; margin: 0 0 16px;
+      }
+      .gd-check .mark { color: var(--green); }
+
+      .gd-note {
+        border-left: 2px solid var(--amber); background: rgba(255,200,87,.05);
+        padding: 10px 14px; margin: 0 0 16px;
+      }
+      .gd-note .tag {
+        display: block; color: var(--amber); font-size: 12px;
+        letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px;
+      }
+      .gd-warn {
+        border-left: 2px solid var(--red); background: rgba(255,133,133,.05);
+        padding: 10px 14px; margin: 0 0 16px;
+      }
+      .gd-warn .tag {
+        display: block; color: var(--red); font-size: 12px;
+        letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px;
+      }
+
+      /* ══ tables ═══════════════════════════════════════════════════ */
+      table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 13px; }
+      th, td { text-align: left; padding: 7px 10px; border: 1px solid var(--frame-soft); vertical-align: top; }
+      th { color: var(--dim); font-weight: 500; background: #101017; font-size: 12px;
+           letter-spacing: .06em; text-transform: uppercase; }
+
+      /* ══ the day-shape strip ══════════════════════════════════════ */
+      .gd-stages { display: grid; gap: 1px; background: var(--frame-soft); border: 1px solid var(--frame-soft); margin: 0 0 18px; }
+      .gd-stage-row { display: grid; grid-template-columns: 40px 1fr 150px 1fr; gap: 1px; background: var(--frame-soft); }
+      .gd-stage-row > div { background: var(--panel-bg); padding: 7px 10px; font-size: 13px; }
+      .gd-stage-row.is-head > div { background: #101017; color: var(--dim); font-size: 11px;
+        letter-spacing: .08em; text-transform: uppercase; }
+      .gd-stage-row .who { color: var(--amber); font-size: 12px; }
+      @media (max-width: 720px) {
+        .gd-stage-row { grid-template-columns: 30px 1fr; }
+        .gd-stage-row > div:nth-child(3), .gd-stage-row > div:nth-child(4) { display: none; }
+      }
+
+      /* ══ the model dialogue ═══════════════════════════════════════ */
+      .gd-dialogue { border: 1px solid var(--frame-soft); margin: 0 0 16px; }
+      .gd-turn { display: grid; grid-template-columns: 118px 1fr; gap: 0;
+                 border-bottom: 1px solid var(--frame-soft); }
+      .gd-turn:last-child { border-bottom: 0; }
+      .gd-turn .who {
+        background: #101017; padding: 10px 12px; font-size: 12px;
+        letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
+        border-right: 1px solid var(--frame-soft);
+      }
+      .gd-turn .said { padding: 10px 14px; }
+      .gd-turn.is-menu .who { color: var(--blue); }
+      .gd-turn.is-think .who { color: var(--cyan); }
+      .gd-turn.is-plan .who { color: var(--green); }
+      @media (max-width: 620px) {
+        .gd-turn { grid-template-columns: 1fr; }
+        .gd-turn .who { border-right: 0; border-bottom: 1px solid var(--frame-soft); }
+      }
+
+      /* ══ role tracks ══════════════════════════════════════════════ */
+      .gd-tracks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 18px; }
+      @media (max-width: 720px) { .gd-tracks { grid-template-columns: 1fr; } }
+      .gd-track { border: 1px solid var(--frame-soft); background: var(--panel-raise); padding: 12px 14px; }
+      .gd-track h4 { margin: 0 0 6px; font-size: 13px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+      .gd-track.build h4 { color: var(--green); }
+      .gd-track.scout h4 { color: var(--amber); }
+      .gd-track.qa h4 { color: var(--blue); }
+      .gd-track p { font-size: 13px; margin: 0 0 8px; }
+      .gd-track .out { color: var(--dim); font-size: 12px; border-top: 1px solid var(--frame-soft); padding-top: 7px; }
+
+      footer { border-top: 1px solid var(--frame-soft); padding-top: 18px; color: var(--dim); font-size: 13px; }
+    </style>
+  </head>
+
+  <body>
+    <div class="gd-topbar">
+      <span class="prompt-sigil">$</span>
+      <span>sea_of_colours</span>
+      <span class="dim gd-hide-sm">· team leader's guide</span>
+      <span class="prompt-caret">_</span>
+      <span class="gd-spacer"></span>
+      <a class="gd-link gd-hide-sm" href="./index.html">[ ATTENDEE GUIDE ]</a>
+      <a class="gd-link gd-hide-sm" href="../manual/index.html">[ MANUAL ]</a>
+    </div>
+    <div class="gd-progress" id="progress"></div>
+
+    <nav class="gd-nav" id="nav">
+      <a href="#top">00 · WHY YOU</a>
+      <a href="#install">01 · INSTALL</a>
+      <a href="#learn">02 · LEARN</a>
+      <a href="#play">03 · PLAY</a>
+      <a href="#mint">04 · MINT</a>
+      <a href="#publish">05 · PUBLISH EMPTY</a>
+      <a href="#weapon">06 · WEAPON SHAPE</a>
+      <a href="#names">07 · NAME THE MOVES</a>
+      <a href="#cycle">08 · THE CYCLE</a>
+      <a href="#evaluate">09 · EVALUATE</a>
+      <a href="#final">10 · FINAL PUSH</a>
+      <a href="#league">11 · LEAGUE</a>
+      <a href="#appendix">A · WHY IT VANISHED</a>
+    </nav>
+
+    <div class="gd-wrap">
+
+      <!-- ══ 00 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="top">
+        <p class="gd-kicker">00 · who this is for</p>
+        <h1>Team leader's guide</h1>
+        <p class="gd-lede">
+          One person per team, running four or five people through a day
+          that ends in a league table. You are not expected to be the best
+          coder in the room &mdash; most of the editing will be done by your
+          team's coding assistants. What you own is <b>sequence</b>.
+        </p>
+        <div class="gd-warn">
+          <span class="tag">The one sentence that matters</span>
+          Whatever is on your fork when the organiser runs collection is what
+          plays in the league. Push early, push something that runs, improve
+          it after. A brilliant agent that never got pushed scores nothing.
+        </div>
+        <p>
+          Mechanics live in
+          <a href="../docs/HACKATHON_AGENTS.md">HACKATHON_AGENTS.md</a>; this
+          page owns ordering and what &ldquo;done&rdquo; looks like at each
+          checkpoint. Where they disagree, that one wins on how things work
+          and this one wins on when to do them.
+        </p>
+
+        <h3>The shape of the day</h3>
+        <div class="gd-stages">
+          <div class="gd-stage-row is-head">
+            <div>#</div><div>Stage</div><div>Who</div><div>Done when</div>
+          </div>
+          <div class="gd-stage-row"><div>01</div><div>Install and check</div><div class="who">everyone, before</div><div><code>soc doctor</code> is clean</div></div>
+          <div class="gd-stage-row"><div>02</div><div>Learn the game</div><div class="who">everyone</div><div>advanced tutorial done</div></div>
+          <div class="gd-stage-row"><div>03</div><div>Play a real game</div><div class="who">pairs</div><div>you lost one and know why</div></div>
+          <div class="gd-stage-row"><div>04</div><div>Mint the agent</div><div class="who">leader</div><div><code>soc list</code> shows your label</div></div>
+          <div class="gd-stage-row"><div>05</div><div>Publish it empty</div><div class="who">leader</div><div>on your fork, unmodified</div></div>
+          <div class="gd-stage-row"><div>06</div><div>First weapon shape</div><div class="who">build track</div><div>four rungs pass</div></div>
+          <div class="gd-stage-row"><div>07</div><div>Name the moves</div><div class="who">team</div><div>your vocabulary in the log</div></div>
+          <div class="gd-stage-row"><div>08</div><div>Run the cycle</div><div class="who">three tracks</div><div>round one shipped</div></div>
+          <div class="gd-stage-row"><div>09</div><div>Evaluate</div><div class="who">QA</div><div>beat your previous self</div></div>
+          <div class="gd-stage-row"><div>10</div><div>Final polish</div><div class="who">leader</div><div>pushed, doctor clean</div></div>
+          <div class="gd-stage-row"><div>11</div><div>League</div><div class="who">organiser</div><div>&mdash;</div></div>
+        </div>
+        <p class="dim">
+          Stages 06&ndash;09 are a loop. Expect to go round it twice; plan for once.
+        </p>
+      </section>
+
+      <!-- ══ 01 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="install">
+        <p class="gd-kicker">01 · before the day</p>
+        <h2>Install and check</h2>
+        <p>
+          Ideally done the evening before. An install that starts at 09:30
+          costs the morning. Python 3.10 or newer; no Snowflake account, no
+          config and no build step are needed to play.
+        </p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> git clone &lt;your fork&gt;   <span class="c"># your fork, not upstream — see 04</span>
+<span class="s">$</span> cd sea-of-colours-hackathon
+<span class="s">$</span> pip install -r requirements.txt
+<span class="s">$</span> python scripts/soc.py doctor</pre>
+        </div>
+        <p><code>doctor</code> is the arbiter, and since v1.45 it names the exact connection it resolved:</p>
+        <div class="gd-term">
+<pre><span class="o">  python           3.13.7</span>
+<span class="o">  backend          memory</span>
+<span class="o">  agents found     1 discovered, 5 routable</span>
+<span class="o">  snowflake conn   ~/.snowflake/connections.toml [soc]</span>
+<span class="o">  LLM credentials  </span><span class="pass">present</span>
+<span class="o">  No problems found.</span></pre>
+        </div>
+
+        <h3>How much Snowflake does your team actually need?</h3>
+        <p>Less than people assume. Getting this right saves a morning.</p>
+        <table>
+          <tr><th>You want to&hellip;</th><th>Needs</th></tr>
+          <tr><td>Play, tutorials, face the heuristics</td><td><b>Nothing.</b> No account, no config</td></tr>
+          <tr><td>Run tests, mint an agent, use the lab</td><td><b>Nothing</b></td></tr>
+          <tr><td>Play <i>against</i> V12, or run your own LLM agent</td><td><b>A PAT.</b> That's it &mdash; the model call is a REST call</td></tr>
+          <tr><td>Keep seasons in your Snowflake account</td><td>The extras and a schema deploy</td></tr>
+        </table>
+        <div class="gd-note">
+          <span class="tag">The row teams get wrong</span>
+          An LLM seat needs a <b>persistent</b> backend &mdash; but persistent
+          does not mean Snowflake. Start the server with
+          <code>SOC_BACKEND=file</code> and you get a durable, replayable
+          store on local disk that accepts LLM seats. The New Game modal then
+          offers <b>File</b> alongside Memory. No Snowpark install, no schema
+          deploy, no warehouse.
+        </div>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span>
+            <b>Checkpoint.</b> Collect <code>soc doctor</code> output from
+            every team member in a chat thread before the day starts. Thirty
+            seconds each, and it converts the morning's mystery failures into
+            a list you already solved.
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ 02 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="learn">
+        <p class="gd-kicker">02 · groundwork</p>
+        <h2>Learn the game</h2>
+        <p>
+          Nobody can write an agent for a game they have not played. This is
+          not warm-up: the doctrine your team writes in stage 06 is only as
+          good as its understanding of what wins.
+        </p>
+        <p>
+          Start the server, press <b>Tutorial</b> on the title screen, and you
+          get a chooser with three cards.
+        </p>
+        <table>
+          <tr><th>Card</th><th>Nights</th><th>Teaches</th></tr>
+          <tr><td><b>Basic</b></td><td>3</td><td>the loop &mdash; orbit, planning, night, praxis</td></tr>
+          <tr><td><b>Advanced</b></td><td>4</td><td>the weapons economy: buying, the public arsenal bar, SNAP and chaff</td></tr>
+          <tr><td><b>Quick game</b></td><td>3</td><td>nothing &mdash; full board, all rules, no films</td></tr>
+        </table>
+        <p>
+          Do Basic then Advanced. Advanced is the one that matters here,
+          because it teaches what your agent will spend all day reasoning
+          about.
+        </p>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span>
+            <b>Checkpoint.</b> Everyone can answer: <i>what does a rival learn
+            when you buy a weapon?</i> If the answer is &ldquo;nothing&rdquo;
+            they have missed the arsenal bar, and their doctrine will be built
+            on sand.
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ 03 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="play">
+        <p class="gd-kicker">03 · groundwork</p>
+        <h2>Play a real game</h2>
+        <p>
+          Play the shipped heuristics before you play each other.
+          <code>red_harvest_lite</code> carries no weapons;
+          <code>red_harvest</code> does. Losing to the armed one teaches more
+          in twenty minutes than beating the lite one teaches all morning.
+        </p>
+        <p>
+          Then play each other. <b>Multiplayer</b> on the title screen opens a
+          public tunnel and gives a scannable link per seat &mdash; no install,
+          no account, no firewall change, works from a phone on cellular. A
+          game seats up to four.
+        </p>
+        <div class="gd-note">
+          <span class="tag">Two traps, both learned the hard way</span>
+          It is not hot-seat: everyone opens their own invite link. And a link
+          carrying only <code>?session=&hellip;</code> makes you a
+          <b>read-only watcher</b> &mdash; a playable seat needs
+          <code>&amp;player=pN</code> too. If someone is watching rather than
+          playing, that is why.
+        </div>
+        <div class="gd-warn">
+          <span class="tag">Host it yourself</span>
+          Never start the server through a coding assistant. That server
+          belongs to the assistant's shell and dies when the session ends; in
+          multiplayer the tunnel dies with it and every guest is dropped
+          mid-game.
+        </div>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span>
+            <b>Checkpoint.</b> Someone can explain, unprompted, why they lost
+            a specific game. If everyone is still saying &ldquo;I just need
+            more harvesters&rdquo;, play another.
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ 04 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="mint">
+        <p class="gd-kicker">04 · the leader's job</p>
+        <h2>Mint the team agent</h2>
+        <p>
+          <b>Early &mdash; before anyone writes a line of code.</b> Everything
+          downstream is named after this decision, and renaming later means
+          re-publishing under a new identity.
+        </p>
+        <p>Fork on GitHub, clone <i>your fork</i>, then:</p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py new \
+    --team redwatch \
+    --name reaper \
+    --participants <span class="k">'Ada Lovelace, Grace Hopper, Alan Turing'</span></pre>
+        </div>
+        <ul>
+          <li>
+            <b><code>--participants</code> is required</b> and is the league's
+            public record. Everyone who touches the agent goes in; a row that
+            names nobody cannot be credited.
+          </li>
+          <li>
+            <b>The label is <code>team_name</code></b> &mdash; here
+            <code>redwatch_reaper</code>. That string goes in every later
+            command and appears in the seat dropdown as
+            <code>REDWATCH_REAPER</code>.
+          </li>
+          <li>
+            <b>It copies V12 wholesale</b> &mdash; 47 files, a complete working
+            agent, not a stub. You start at parity with the baseline and
+            differentiate from there.
+          </li>
+        </ul>
+        <h3>What minting touches</h3>
+        <div class="gd-term">
+<pre><span class="s">$</span> git status --short
+<span class="o">?? sea_of_colours/orchestrator_2/harnesses/redwatch_reaper/</span></pre>
+        </div>
+        <p>
+          <b>One new directory. Nothing shared is edited.</b> No registry, no
+          import list, no central table. That is what lets forty teams work at
+          once without a merge conflict &mdash; and why you must never add your
+          agent to <code>binding_registry.py</code>. Doing so breaks the very
+          thing that makes your fork independent.
+        </p>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span><b>Checkpoint.</b> <code>python scripts/soc.py list</code> shows your label.</span>
+        </div>
+      </section>
+
+      <!-- ══ 05 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="publish">
+        <p class="gd-kicker">05 · the leader's job</p>
+        <h2>Publish it empty</h2>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py push</pre>
+        </div>
+        <p>
+          This feels pointless. It is the highest-value five seconds of your
+          day. It proves your remote is right, your directory is registrable
+          and your team has a scoring entry &mdash; while there is still all
+          day to fix any of those. <code>push</code> refuses if
+          <code>origin</code> is not yours, which catches the person who cloned
+          upstream instead of forking.
+        </p>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span><b>Checkpoint.</b> Your agent directory is visible on your fork on GitHub.</span>
+        </div>
+
+        <h3>How the GitHub side works, in one page</h3>
+        <p>
+          Worth reading once, because every confusing thing that happens later
+          follows from it.
+        </p>
+        <p>
+          <b>Each team owns a fork. Nobody has write access to the event
+          repo.</b> That is not a precaution, it is the mechanism: one team's
+          push cannot break another's, and there is no queue to join. Your
+          clone has two remotes &mdash; <code>origin</code> is your fork and
+          the only place you ever push, <code>upstream</code> is where kit
+          fixes come from and you never push to it.
+        </p>
+        <p>
+          <b>Nobody opens a pull request.</b> If someone on your team asks
+          whether to PR their agent or branch off the main repo, the answer to
+          both is no &mdash; their agent stays in their fork and you never
+          receive a commit from them.
+        </p>
+        <p>
+          <b>It has to be a real fork, made with the Fork button.</b> Creating
+          an empty repo and pointing a remote at it is what most people mean by
+          &ldquo;forking&rdquo;, and from the laptop it is indistinguishable
+          &mdash; full history, your own copy, push works. What is missing is
+          GitHub's link back to the event repo, and the league is collected by
+          walking that repo's forks, so an unlinked copy is never found and
+          never scored with no error anywhere. <code>soc doctor</code> flags it
+          (v1.47). Renaming a fork afterwards is fine; the link survives it.
+        </p>
+        <p>
+          <b>Your agent is one directory, and that directory is the
+          registration.</b> There is no central list. The kit finds agents by
+          scanning <code>harnesses/</code> for <code>agent.json</code> files,
+          so minting writes one folder and touches nothing shared. Everything
+          else here is a consequence of that.
+        </p>
+        <p>
+          <code>soc push</code> is not a plain <code>git push</code>. It runs
+          six steps, and each one is a check that exists because instructions
+          do not survive a deadline:
+        </p>
+        <ol>
+          <li><b>Is <code>origin</code> yours?</b> It compares your remote
+            against your GitHub login. If you cloned upstream by mistake it
+            stops and prints the exact commands to fix it &mdash; your work
+            comes across intact.</li>
+          <li><b>Which agent is yours?</b> Found by the
+            <code>agent.json</code> scan. With more than one fork present it
+            asks, via <code>--agent &lt;label&gt;</code>.</li>
+          <li><b>Has anything changed outside your directory?</b> If so it
+            refuses, and lists what.</li>
+          <li>It stages <b>only your agent directory</b>.</li>
+          <li>It commits, with <code>&lt;label&gt;: update agent</code> unless
+            you pass <code>-m</code>.</li>
+          <li>It pushes to your fork. If your branch moved underneath you
+            &mdash; a teammate pushed, or you pulled upstream on another
+            laptop &mdash; it rebases and retries automatically, twice.</li>
+        </ol>
+        <div class="gd-warn">
+          <span class="tag">The step that surprises people</span>
+          A single edited file <i>anywhere</i> outside your folder blocks the
+          push, even though the commit would never have included it. That
+          strictness is deliberate: at the end of the day only your directory
+          is lifted out of your fork, so a change outside it would not travel
+          &mdash; your agent would quietly behave differently in the league
+          than it does on your laptop. Revert it with
+          <code>git checkout -- &lt;path&gt;</code> and push again. If a change
+          outside really is necessary, that is a change to the <i>kit</i>, so
+          raise it rather than forcing it in.
+        </div>
+        <p>
+          Step six is safe for the same reason. Because every team's commits
+          touch different directories, histories interleave with nothing to
+          resolve &mdash; which is why the rebase can be automatic rather than
+          a question. If one ever does conflict, something outside your folder
+          moved; get an organiser rather than forcing it.
+        </p>
+        <div class="gd-note">
+          <span class="tag">Pushing is not entering</span>
+          Your fork is where your agent lives. An organiser collects the forks
+          at the end to assemble the league, fetching each agent directory
+          into a separate staging area. So keep pushing as you go: whatever is
+          on your fork at collection time is what plays.
+        </div>
+      </section>
+
+      <!-- ══ 06 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="weapon">
+        <p class="gd-kicker">06 · the heart of the day</p>
+        <h2>Give your agent its first weapon shape</h2>
+        <p>Start from the truth that <b>V12 cannot fight</b>:</p>
+        <div class="gd-term">
+<pre><span class="s">$</span> python scripts/soc.py weapons --agent tabula_v12
+
+<span class="o">  1. the agent knows it owns a rack            </span><span class="fail">FAIL</span>
+<span class="o">  2. the play is offerable and compilable      </span><span class="fail">FAIL</span>
+<span class="o">  3. the offer explains itself                 </span><span class="fail">FAIL</span>
+<span class="o">  4. doctrine says when, and at what tempo     </span><span class="fail">FAIL</span></pre>
+        </div>
+        <p>
+          Not a bug &mdash; the exercise. V12 buys weapons and never fires
+          them. Every fork in the room starts from an agent that owns a rack it
+          does not know how to use, and the teams that place well fix that
+          first.
+        </p>
+
+        <h3>Decide the shape before anyone types</h3>
+        <p>Three questions, ten minutes, whole team.</p>
+        <ol>
+          <li>
+            <b>How many weapons?</b> One done properly beats three done
+            vaguely. SNAP is cheapest to reason about (100 blue, one cell, one
+            hour) and cheapest to afford, so it is the usual first pick. EMP is
+            the crowd-pleaser. Chaff at 300 is hardest to justify and easiest
+            to waste.
+          </li>
+          <li>
+            <b>What is the one sentence?</b> &ldquo;We kill the eye that lights
+            their pure, the night they were going to land on it.&rdquo; If you
+            cannot say it in one sentence, your doctrine will not say it either.
+          </li>
+          <li><b>What is it called?</b> Name it now &mdash; see stage 07.</li>
+        </ol>
+
+        <h3>The four surfaces</h3>
+        <p>
+          A weapon play is four edits, in order, and each is invisible until
+          the one before it works. That is exactly why teams get stuck and
+          conclude &ldquo;the model is stupid&rdquo;. It is almost never the
+          model.
+        </p>
+        <table>
+          <tr><th>#</th><th>Surface</th><th>File in your fork</th><th>What it means</th></tr>
+          <tr>
+            <td>1</td><td><b>Know the rack</b></td>
+            <td><code>world_view.py</code><br /><code>prompt.py</code></td>
+            <td>The night phase is told what you own. Reading it in <code>orbit_policy.py</code> does not count &mdash; that is the buying code, which knows by construction</td>
+          </tr>
+          <tr>
+            <td>2</td><td><b>Offer and compile</b></td>
+            <td><code>chat_schema.py</code><br /><code>agency.py</code><br /><code>packager.py</code></td>
+            <td>Schema permits the verb, menu carries the play, packager passes it through. All three or nothing fires</td>
+          </tr>
+          <tr>
+            <td>3</td><td><b>Explain the offer</b></td>
+            <td><code>agency.py</code> &mdash; <code>Option.detail</code>, <code>Option.rationale</code></td>
+            <td>Bare geometry is not a decision. Say what firing <i>buys</i></td>
+          </tr>
+          <tr>
+            <td>4</td><td><b>Doctrine</b></td>
+            <td><code>doctrine.py</code><br /><code>_v7/orbit_wishlist.py</code></td>
+            <td>When to reach for it, at what tempo. An option nobody is told to want stays unwanted</td>
+          </tr>
+        </table>
+        <p>
+          Check yourself at any point with
+          <code>soc weapons --agent &lt;yours&gt;</code>. It reads your source,
+          needs no model and no credentials, and runs in a second &mdash; so it
+          belongs in the inner loop, not at the end of it. It is a smoke test:
+          it answers &ldquo;have you built this rung&rdquo;, never &ldquo;is it
+          any good&rdquo;.
+        </p>
+
+        <h3>The anatomy of one weapon option</h3>
+        <p>Rungs 2 and 3 are one object. Here it is, with a team's own flavour on it:</p>
+        <div class="gd-term">
+<pre><span class="k">Option</span>(
+    option_id=<span class="k">"EMP_BONANZA"</span>,
+    kind=<span class="k">"emp"</span>,
+    title=<span class="k">"EMP BONANZA — three of their eyes, one cloud, (14,9)"</span>,
+    detail=(
+        <span class="k">"One EMP, radius 2, 8-hour cloud. Catches rival probes at "</span>
+        <span class="k">"(13,8), (14,9) and (15,10) — every eye they have on the "</span>
+        <span class="k">"north seam. Costs 200 blue and one hour-slot."</span>
+    ),
+    execute_lines=[<span class="k">"EMP_BONANZA: emp at [14, 9]"</span>],
+    rationale=(
+        <span class="k">"Their whole northern read is three probes in a 2-cell "</span>
+        <span class="k">"huddle, which is a filing error, not a formation. One "</span>
+        <span class="k">"cloud blinds all of it for 8 hours. They cannot drop into "</span>
+        <span class="k">"cells they cannot see (§3.9.7), so tonight's landing on "</span>
+        <span class="k">"your pure at (15,11) is refused — not delayed. Compare: "</span>
+        <span class="k">"SNAP is 100 blue and kills exactly one of the three, "</span>
+        <span class="k">"which leaves the drop legal from the other two."</span>
+    ),
+)</pre>
+        </div>
+        <p>Four things there are worth copying:</p>
+        <ul>
+          <li>The <b>title</b> is one line and leads with the outcome, not the coordinates.</li>
+          <li>The <b>detail</b> is honest arithmetic &mdash; cost, radius, duration, what is caught.</li>
+          <li>
+            The <b>rationale argues against the alternative</b>. This is the
+            single highest-value habit in the harness: the model is choosing
+            <i>between</i> options, so an option that only praises itself
+            competes badly.
+          </li>
+          <li>
+            The name is silly and the content is exact. <code>EMP_BONANZA</code>
+            genuinely is a bonanza &mdash; three probes in one cloud.
+          </li>
+        </ul>
+
+        <h3>What the model does with it</h3>
+        <p>Options reach the model grouped by kind. It then argues with itself. A real night, lightly dramatised:</p>
+        <div class="gd-dialogue">
+          <div class="gd-turn is-menu">
+            <div class="who">Menu says</div>
+            <div class="said">
+              <code>GRAB1</code> — 340 red at (7,3), visible, no probe needed.<br />
+              <code>EMP_BONANZA</code> — three eyes, one cloud, (14,9).<br />
+              <code>PRSNAP1</code> — a second probe over your landing at (15,11); insurance, banks nothing.
+            </div>
+          </div>
+          <div class="gd-turn is-think">
+            <div class="who">Thinker</div>
+            <div class="said">
+              GRAB1 banks tonight and risks nothing. BONANZA banks nothing
+              tonight &mdash; it takes away <i>their</i> night. I hold 340 red I
+              can see and they are about to take a pure off me. Denial is worth
+              more than the bank here, and it is only worth it because all three
+              probes sit in one radius; next night they will not.
+            </div>
+          </div>
+          <div class="gd-turn is-think">
+            <div class="who">Also weighed</div>
+            <div class="said">
+              PRSNAP1 insures the landing for one probe and no blue, but
+              insurance protects my grab and does nothing to their tempo.
+              BONANZA does both &mdash; blind them, and my landing is safe by
+              consequence.
+            </div>
+          </div>
+          <div class="gd-turn is-plan">
+            <div class="who">Plan</div>
+            <div class="said"><code>[EMP_BONANZA, GRAB1]</code>, posture aggressive.</div>
+          </div>
+        </div>
+        <p>Which lands in the log, in front of the whole room, as:</p>
+        <div class="gd-term">
+<pre><span class="o">[REDWATCH_REAPER] [plan=aggressive: EMP_BONANZA, GRAB1] [predicted=high] moves=11</span></pre>
+        </div>
+        <div class="gd-note">
+          <span class="tag">Why the dialogue is the debugger</span>
+          If your agent keeps <i>declining</i> EMP_BONANZA, the rationale is
+          losing an argument &mdash; and you can read exactly which one, on the
+          card, and rewrite the sentence that lost it. That is the loop, and it
+          is far faster than tuning numbers.
+        </div>
+
+        <h3>Plans worth arguing about</h3>
+        <p>Give the team shapes to fight over. None is the right answer; the arguing is the point.</p>
+        <table>
+          <tr><th>Shape</th><th>The idea</th><th>The catch</th></tr>
+          <tr><td><b>The bonanza</b></td><td>Wait for clustered probes, blind the lot</td><td>High ceiling, needs patience, window closes fast</td></tr>
+          <tr><td><b>The tempo tax</b></td><td>A cheap SNAP most nights at whichever single eye lights their best target</td><td>Never spectacular. Always annoying</td></tr>
+          <tr><td><b>The insurance policy</b></td><td>Never fire offensively; cover your own landings</td><td>Boring, and surprisingly hard to beat</td></tr>
+          <tr><td><b>The bluff</b></td><td>Buy 600 of arsenal early, fire none. They see the total, not the rack</td><td>Cheeky &mdash; and it costs 600 blue you could have spent</td></tr>
+          <tr><td><b>The all-in</b></td><td>Chaff on the lift hour whenever affordable</td><td>Brilliant, or an expensive way to make noise</td></tr>
+        </table>
+      </section>
+
+      <!-- ══ 07 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="names">
+        <p class="gd-kicker">07 · identity</p>
+        <h2>Name your moves. Seriously.</h2>
+        <p>
+          Your agent hands the model a menu with short ids. Out of the box they
+          are inherited from V12 and they are <i>fine</i>: <code>GRAB1</code>,
+          <code>PR2</code>, <code>BL3</code>, <code>PRSNAP1</code>. They are also
+          completely anonymous, and a league table of eleven agents all
+          narrating <code>GRAB1</code> is a table with no personalities in it.
+        </p>
+        <p>
+          Rename them. <code>SMASHBURGER</code>, <code>LAST_SUPPER</code>,
+          <code>POLITE_ROBBERY</code> &mdash; whatever your team finds funny at
+          2pm. They live in your own harness directory, so renaming is a change
+          to your fork and nobody else's.
+        </p>
+        <p>Three benefits, in rising order of usefulness:</p>
+        <ol>
+          <li><b>Identity.</b> Your turns are recognisable in a shared replay, which matters when the room is watching.</li>
+          <li><b>Debugging.</b> Grep a whole season for your own vocabulary and find every turn that reached for that play.</li>
+          <li><b>Diffing.</b> In the lab you compare your fork against V12 on the same turn. When both say <code>GRAB1</code> you must read carefully to see whose is whose. When yours says <code>SMASHBURGER1</code>, you don't.</li>
+        </ol>
+        <div class="gd-warn">
+          <span class="tag">Be silly about tone, never about content</span>
+          These names are not cosmetic to the model &mdash; they are in the
+          prompt and it picks moves by id. Call a cautious vision move
+          <code>NUKE</code> and you have quietly told the model that option is
+          aggressive. <code>SMASHBURGER</code> for a smash on your own pure
+          seam is perfect; <code>SMASHBURGER</code> for a defensive probe is a
+          bug you will spend an hour not finding.
+        </div>
+        <div class="gd-warn">
+          <span class="tag">Rename all of it, not most of it</span>
+          An id is written where the option is minted, in the line that
+          executes it, and in any doctrine or wishlist that recommends it by
+          name. <code>PRSNAP</code> appears in three files. If doctrine still
+          says &ldquo;prefer PRSNAP&rdquo; after you renamed the option to
+          <code>BODYGUARD</code>, you have recommended a move that is not on
+          the menu. That exact bug shipped here once: nothing crashes, the
+          agent just quietly stops taking a play you thought you had
+          recommended. Grep your folder for the old name before you call it
+          done.
+        </div>
+      </section>
+
+      <!-- ══ 08 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="cycle">
+        <p class="gd-kicker">08 · how the team works</p>
+        <h2>The cycle</h2>
+        <p>
+          The mistake is five people taking turns at one keyboard. The build is
+          one person's work for an hour; <i>knowing what to build</i> is
+          everyone's, and it happens at the same time.
+        </p>
+        <div class="gd-tracks">
+          <div class="gd-track build">
+            <h4>Build · 1–2</h4>
+            <p>Implement the four surfaces. Head down, few opinions, keeps pushing.</p>
+            <div class="out">→ an agent that fires</div>
+          </div>
+          <div class="gd-track scout">
+            <h4>Scout · 1–2</h4>
+            <p>Play V12. Lose to it. Work out how to exploit it.</p>
+            <div class="out">→ a list of nefarious moves</div>
+          </div>
+          <div class="gd-track qa">
+            <h4>QA · 1–2</h4>
+            <p>Run seasons and lab turns, read cards, feed transcripts to the assistant.</p>
+            <div class="out">→ a ranked list of what's broken</div>
+          </div>
+        </div>
+        <div class="gd-note">
+          <span class="tag">Why the scouts matter more than they sound</span>
+          <b>Every agent in the room is descended from V12</b>, including
+          everyone else's. A weakness you find in V12 while playing it is, on
+          the day, a weakness in most of the field. Playing the baseline is
+          competitive research, not warm-up &mdash; and it needs no code, no
+          credentials and nobody's permission, so it starts the moment the
+          build track does.
+        </div>
+
+        <h3>The loop, once the build lands</h3>
+        <div class="gd-term">
+<pre><span class="o">  scout finds a move ──► build implements ──► QA runs seasons + lab
+        ▲                                              │
+        └──────────────  ranked feedback  ◄────────────┘
+                    (leader keeps the list)
+                              │
+                          push between
+                          every round</span></pre>
+        </div>
+        <p>Push between rounds, not at the end. A fork you pushed an hour ago is a fork you can go back to.</p>
+
+        <h3>Collating feedback &mdash; the leader's stage</h3>
+        <p>By now four people have opinions and three contradict. Turn that into one ranked list <i>before</i> anyone edits.</p>
+        <ol>
+          <li><b>Write the complaint as an observation, not a fix.</b> &ldquo;It bought chaff on day 2 with no rival in vision&rdquo; beats &ldquo;make it buy chaff later&rdquo;.</li>
+          <li><b>Attach evidence</b> &mdash; a lab board and seat, or a turn number in a season card. An unevidenced complaint costs an hour and finds nothing.</li>
+          <li><b>Rank ruthlessly.</b> You will implement two or three, not nine.</li>
+          <li><b>Cut game-rules disagreements.</b> Those are for the organisers, not your afternoon.</li>
+        </ol>
+
+        <h3>Benchmark against your own past self</h3>
+        <p>This is the trick that tells you whether you are improving or just changing. Snapshot before a round of edits:</p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py share --agent redwatch_reaper --out v1.socfork
+<span class="s">$</span> python scripts/soc.py grab v1.socfork --as-name reaper_v1
+<span class="o">  installed redwatch_reaper_v1 — 50 files</span>
+<span class="o">  repointed from redwatch_reaper, so both can run side by side</span></pre>
+        </div>
+        <p>Now improve the real one freely, and when you want to know if it worked, play the new against the old:</p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py season --p1 redwatch_reaper --p2 reaper_v1 --seed 99</pre>
+        </div>
+        <p>
+          Far sharper than &ldquo;we beat the heuristic again&rdquo;. Beating
+          the bot proves you are competent; beating yesterday's self proves you
+          are improving.
+        </p>
+        <div class="gd-note">
+          <span class="tag">Snapshots are for you, not the league</span>
+          <code>soc push --agent</code> publishes one directory. Push your real
+          agent and leave the <code>_v1</code> copies local. A team that
+          publishes five variants has five half-agents in the table instead of
+          one good one.
+        </div>
+      </section>
+
+      <!-- ══ 09 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="evaluate">
+        <p class="gd-kicker">09 · the cheap bit</p>
+        <h2>Evaluate &mdash; the three ways to test an agent</h2>
+        <p>
+          There are exactly three, they answer different questions, and they
+          cost wildly different amounts of time. Teams routinely do only the
+          slow one and then wonder why the result is inconclusive.
+        </p>
+        <table>
+          <tr><th>Mode</th><th>Answers</th><th>Costs</th><th>PAT?</th></tr>
+          <tr><td><b>Lab</b> &mdash; one frozen turn</td><td><i>Why</i> did it choose that?</td><td>~20s a take</td><td>yes</td></tr>
+          <tr><td><b>Headless</b> &mdash; a whole season</td><td>Does the doctrine survive an arc?</td><td>~15s a turn, unattended</td><td>yes</td></tr>
+          <tr><td><b>Play against it</b></td><td>What is it like to face?</td><td>a real sitting</td><td>yes</td></tr>
+        </table>
+        <p>
+          Do them in that order. The lab tells you what your agent is
+          thinking, the season tells you whether that thinking survives
+          contact, and playing it tells you the thing neither will ever print
+          &mdash; whether its weapon does what you imagined when you named it.
+        </p>
+        <p>
+          Seasons are separate processes writing to separate stores, so just
+          run them at once.
+        </p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py season --p1 redwatch_reaper --p2 red_harvest --seed 11 --name A --quiet &amp;
+<span class="s">$</span> python scripts/soc.py season --p1 redwatch_reaper --p2 tabula_v12  --seed 22 --name B --quiet &amp;
+<span class="s">$</span> python scripts/soc.py season --p1 redwatch_reaper --p2 reaper_v1   --seed 33 --name C --quiet &amp;
+<span class="s">$</span> wait</pre>
+        </div>
+        <p>
+          Measured on this kit: <b>three full seasons in 19 seconds</b> wall
+          clock at 241% CPU &mdash; they genuinely run in parallel rather than
+          queueing. Seasons with an LLM seat are far slower because they are
+          dominated by inference latency rather than CPU, which is precisely
+          why parallel matters <i>more</i> there, not less. Three LLM seasons
+          cost roughly what one costs in wall-clock time.
+        </p>
+        <p><b>Vary the opponent, not the seed.</b> Each of the three answers a different question:</p>
+        <table>
+          <tr><th>Opponent</th><th>Answers</th></tr>
+          <tr><td><code>red_harvest</code></td><td>Are we competent?</td></tr>
+          <tr><td><code>tabula_v12</code></td><td>Do we beat the baseline the field is built from?</td></tr>
+          <tr><td><code>reaper_v1</code></td><td>Was today worth it?</td></tr>
+        </table>
+
+        <h3>The fast lane: one frozen turn</h3>
+        <p>
+          A frozen turn is a real turn from a real season, snapshotted the
+          instant before a seat planned. Cast your fork into that seat and
+          compare against V12's decision on identical information. This is
+          where you learn <i>why</i>, which a season score never tells you.
+        </p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py lab      <span class="c"># list the turns and forks</span>
+<span class="s">$</span> python run_web.py             <span class="c"># then open /lab in the browser</span></pre>
+        </div>
+        <p>
+          Arm the seats from the ARMS control if you want to see how your fork
+          behaves against a rack, then cast it from the AGENT tab. A take comes
+          back in about twenty seconds and brings its reasoning with it. The
+          lab clones the board and writes only to its own directory, so
+          nothing you do here can reach a live game.
+        </p>
+
+        <h3>The third lane: play against it yourself</h3>
+        <p>
+          The one teams forget, and the one that catches the embarrassing
+          stuff. Start a server, hit <b>Play</b>, and pick your own agent for
+          the opposing seat &mdash; it takes its turn automatically after you
+          transmit, you do not invoke it.
+        </p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> SOC_BACKEND=file python run_web.py</pre>
+        </div>
+        <div class="gd-note">
+          <span class="tag">An LLM seat is refused on the Memory backend</span>
+          Deliberately, and in these words: <i>&ldquo;those play on a
+          persistent backend so the season, and the agent's reasoning for
+          every turn, are still there to replay afterwards.&rdquo;</i> A match
+          you cannot reopen teaches you nothing. Any persistent backend clears
+          it and <code>file</code> needs no Snowflake account, so
+          <code>SOC_BACKEND=file</code> is the answer for almost everyone.
+        </div>
+        <p>
+          Play three or four nights, not one. You are not looking for the
+          score &mdash; you are looking for the moment you say <b>&ldquo;why
+          would it do <i>that</i>&rdquo;</b>, because that sentence is the
+          highest-quality bug report your team will get all day.
+        </p>
+        <div class="gd-warn">
+          <span class="tag">Will the server see a newly minted agent?</span>
+          It depends on one flag. <code>python run_web.py</code> has
+          <b>reload on by default</b>: minting writes new <code>.py</code>
+          files, the watcher notices, the server restarts itself, and the
+          agent appears in the New Game dropdown and the lab within about ten
+          seconds. <code>--no-reload</code> builds the roster once and
+          <b>will not see it</b> &mdash; verified, with <code>soc list</code>
+          showing the agent while that server's own roster still did not.
+          Since <code>--no-reload</code> is the right flag for a long game,
+          the trap is set exactly where it hurts most: <b>mint before you
+          start the server, not after</b>. Hard-refresh the tab either way.
+        </div>
+
+        <h3>Feed the transcripts to your coding assistant</h3>
+        <p>Every season writes a Markdown card per turn, and one combined file:</p>
+        <div class="gd-term">
+<pre><span class="o">reports/seasons/&lt;NAME&gt;_&lt;id&gt;/all-cards.md     (paste this to an agent)</span>
+<span class="o">reports/seasons/&lt;NAME&gt;_&lt;id&gt;/cards/           (one file per turn)</span></pre>
+        </div>
+        <p>
+          A heuristic season's combined file runs about 550 lines &mdash; small
+          enough to paste whole. This is the highest-leverage thing QA does all
+          day: hand over the cards and ask <b>why</b>, not <b>what</b>.
+          &ldquo;Here is the season. On night 3 we declined EMP_BONANZA with
+          three probes in radius. Read the rationale and tell me which argument
+          lost.&rdquo;
+        </p>
+        <p>
+          Geometry faults especially fall out of this fast &mdash; an agent
+          firing one cell off the cluster, or insuring a landing it was never
+          going to make, is obvious in a transcript and nearly invisible in a
+          score.
+        </p>
+        <div class="gd-warn">
+          <span class="tag">A season that &ldquo;ran fine&rdquo; may not be yours</span>
+          Without credentials an LLM seat silently falls back to the built-in
+          heuristic. A headless season says so in these words &mdash; if you
+          see it, your result is not a measurement of your agent:
+          <div class="gd-term" style="margin-top:10px">
+<pre><span class="fail">  WARNING: 14 turn(s) fell back to the built-in heuristic — the model was
+  not reached, so that part of this season is not your agent's.</span></pre>
+          </div>
+        </div>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span>
+            <b>Checkpoint.</b> One lab diff you can explain, and one season you
+            have actually watched. A score you have not watched is a rumour.
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ 10 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="final">
+        <p class="gd-kicker">10 · the last hour</p>
+        <h2>Final polish and final push</h2>
+        <p>Stop editing earlier than feels comfortable. The last hour is verification, not features.</p>
+        <div class="gd-term">
+          <button class="gd-copy" type="button">[ COPY ]</button>
+<pre><span class="s">$</span> python scripts/soc.py doctor        <span class="c"># clean?</span>
+<span class="s">$</span> python scripts/soc.py list          <span class="c"># still listed?</span>
+<span class="s">$</span> python scripts/soc.py season --p1 redwatch_reaper --p2 tabula_v12 --days 3
+<span class="s">$</span> python scripts/soc.py push -m <span class="k">"final"</span></pre>
+        </div>
+        <div class="gd-warn">
+          <span class="tag">The failure this prevents</span>
+          A team whose final refactor broke discovery, pushed at the buzzer,
+          and enters the league as a directory the loader skips.
+        </div>
+        <div class="gd-check">
+          <span class="mark">&#10003;</span>
+          <span>
+            <b>Checkpoint.</b> Your fork carries the agent you intend to enter,
+            and it ran a season within the last thirty minutes.
+          </span>
+        </div>
+      </section>
+
+      <!-- ══ 11 ═══════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="league">
+        <p class="gd-kicker">11 · the organiser</p>
+        <h2>The league</h2>
+        <p>
+          The organiser collects the field into a <b>separate staging
+          checkout</b> &mdash; not this repo, not anyone's fork. Attendees pull
+          from upstream all day, and forty entrants landing here would hand the
+          room a conflict.
+        </p>
+        <div class="gd-term">
+<pre><span class="s">$</span> python scripts/soc.py collect --dry-run   <span class="c"># lists the forks it can see</span>
+<span class="s">$</span> python scripts/soc.py collect             <span class="c"># assembles ../soc-league</span>
+<span class="s">$</span> python scripts/soc.py league</pre>
+        </div>
+        <p>
+          Collection resets before each run, so it is a snapshot of the forks
+          as they stand rather than an accumulation. It will not take a fork's
+          <code>tabula_v12</code> (every fork has one; the baseline comes from
+          upstream) and will not silently resolve two forks claiming the same
+          name.
+        </p>
+      </section>
+
+      <!-- ══ A ════════════════════════════════════════════════════ -->
+      <section class="gd-scene" id="appendix">
+        <p class="gd-kicker">appendix</p>
+        <h2>Why your agent vanished</h2>
+        <p>
+          Worth understanding, because when an agent &ldquo;does not
+          appear&rdquo; this is always the reason.
+        </p>
+        <p>
+          Minting writes a directory containing an <code>agent.json</code>.
+          Nothing registers it explicitly. When the binding registry is
+          imported it scans the harnesses directory for anything holding an
+          <code>agent.json</code>, validates each, and folds the valid ones
+          into the routing table. That import-time scan is the whole mechanism.
+        </p>
+        <p>Two consequences, and both catch people:</p>
+        <ul>
+          <li>
+            <b>A fresh process sees your agent immediately.</b>
+            <code>soc list</code>, <code>soc lab</code>, <code>soc season</code>
+            and <code>soc doctor</code> each start Python anew.
+          </li>
+          <li>
+            <b>A running server depends on whether it is watching.</b> The
+            roster is built when that process imports the registry, so the
+            only question is whether it has imported since you minted.
+            <code>python run_web.py</code> has <b>reload on by default</b>:
+            the new files trip the watcher, the server restarts itself, and
+            the agent lands in both the New Game dropdown and the lab cast
+            list within about ten seconds. <code>--no-reload</code> imports
+            once and <b>will not see it</b> until you restart by hand &mdash;
+            and that is the flag a long game should be using, so the trap sits
+            exactly where it hurts most. Hard-refresh the tab either way; the
+            page caches the roster it was served.
+          </li>
+        </ul>
+        <div class="gd-note">
+          <span class="tag">The one-line habit</span>
+          Mint before you start the server, not after. It costs nothing and
+          it sidesteps the whole question.
+        </div>
+
+        <h3>Where it can silently not appear</h3>
+        <table>
+          <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+          <tr><td>Not in the dropdown, but <code>soc list</code> shows it</td><td>Server started <code>--no-reload</code> before you minted</td><td>Restart, hard-refresh</td></tr>
+          <tr><td>Missing everywhere, no error</td><td>Invalid <code>agent.json</code> — usually no <code>participants</code></td><td><code>soc doctor</code> prints it under PROBLEMS</td></tr>
+          <tr><td>Listed but not selectable</td><td>No <code>menu_label</code></td><td>Add one</td></tr>
+          <tr><td>Seat does nothing all night</td><td>No PAT — the harness falls back silently</td><td><code>soc doctor</code></td></tr>
+          <tr><td>Rejected at game creation</td><td>LLM seat on the Memory backend</td><td>Use a persistent backend</td></tr>
+        </table>
+        <div class="gd-note">
+          <span class="tag">One typo cannot stop the room</span>
+          A malformed manifest removes <b>that one agent</b>. Everyone else's
+          still loads &mdash; deliberately.
+        </div>
+
+        <footer>
+          <p>
+            <a href="./index.html">← attendee guide</a> ·
+            <a href="../manual/index.html">manual</a> ·
+            <a href="../manual/agent.html">agent &amp; harness</a> ·
+            <a href="../docs/HACKATHON_AGENTS.md">HACKATHON_AGENTS.md</a>
+          </p>
+          <p class="dim">sea_of_colours · team leader's guide</p>
+        </footer>
+      </section>
+    </div>
+
+    <script>
+      // Progress bar + active nav. Kept tiny and dependency-free: this
+      // page has to work off disk, opened by double-click, offline.
+      (function () {
+        var bar = document.getElementById('progress');
+        var links = Array.prototype.slice.call(
+          document.querySelectorAll('#nav a')
+        );
+        var sections = links
+          .map(function (a) { return document.querySelector(a.getAttribute('href')); })
+          .filter(Boolean);
+
+        function onScroll() {
+          var h = document.documentElement;
+          var max = h.scrollHeight - h.clientHeight;
+          bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+
+          var top = h.scrollTop + 140;
+          var idx = 0;
+          for (var i = 0; i < sections.length; i++) {
+            if (sections[i].offsetTop <= top) idx = i;
+          }
+          links.forEach(function (a, i) {
+            a.classList.toggle('is-active', i === idx);
+          });
+        }
+
+        document.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+
+        // Copy buttons — copy the sibling <pre>, stripping the shell
+        // sigil so what lands on the clipboard is runnable.
+        document.querySelectorAll('.gd-copy').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var pre = btn.parentElement.querySelector('pre');
+            if (!pre) return;
+            var text = Array.prototype.slice
+              .call(pre.childNodes)
+              .map(function (n) {
+                if (n.nodeType === 1 && n.classList.contains('c')) return '';
+                if (n.nodeType === 1 && n.classList.contains('o')) return '';
+                if (n.nodeType === 1 && n.classList.contains('s')) return '';
+                return n.textContent;
+              })
+              .join('')
+              .split('\n')
+              .map(function (l) { return l.trim(); })
+              .filter(Boolean)
+              .join('\n');
+            navigator.clipboard.writeText(text).then(function () {
+              var old = btn.textContent;
+              btn.textContent = '[ COPIED ]';
+              setTimeout(function () { btn.textContent = old; }, 1200);
+            });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

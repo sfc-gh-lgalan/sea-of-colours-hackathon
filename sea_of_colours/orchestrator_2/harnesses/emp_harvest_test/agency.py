@@ -611,6 +611,230 @@ def _blind_scorch_probe_sites(
     return [("rim", rim[-1]), ("hole", hole)]
 
 
+# ── SNAP salvos (v13 — the third weapon shape) ────────────────────────
+#
+# SNAP is one missile, one cell, one hour. Two properties matter here and
+# neither the EMP salvos nor a chain option carry them:
+#
+#   1. It resolves ABOVE the hour's vision snapshot (§4.9.4). A landing
+#      into the cell it lands on is refused THE HOUR IT FIRES, not next —
+#      the deliberate opposite of the EMP, which resolves below the
+#      snapshot and only denies from the following hour. This is the
+#      smash-and-grab counter: a rival about to belly-flop a pure at H1
+#      lands on a hot cell, is damaged in orbit, and never spends the
+#      outing (§3.9.2). "Kills the beacon before the landing checks it."
+#
+#   2. It is the cheapest ordnance in the game — 100 blue vs the EMP's
+#      200, vs chaff's 300 (§4.9.8).
+#
+# SNAP_KILL is the generic cheap-single-probe-hunt (unrestricted target).
+# SNAP_STRIKE is the specific rival-redsign probe-hunt whose value scales
+# with HOW FEW rival probes see the redsign — killing a rival's SOLE eye
+# denies their drop tonight; killing one of three eyes achieves nothing.
+
+
+def _snap_kill_option(
+    target: Tuple[int, int], *,
+    victim_note: str,
+    freshness_days: Optional[int] = None,
+) -> Option:
+    fresh = (
+        f" (last seen day {int(freshness_days)})"
+        if freshness_days is not None else ""
+    )
+    return Option(
+        option_id="SNAP_KILL",
+        kind="snap",
+        title=f"SNAP round -> {_fmt_cell(target)}",
+        detail=(
+            "One round, one cell, ONE hour-slot. Kills the probe on impact; "
+            "any harvester on the cell this hour is crippled; any landing "
+            "into it THIS hour is refused (§4.9.4)."
+        ),
+        execute_lines=[
+            f"SNAP_KILL: snap at {list(target)} (ONE cell, ONE charge)"
+        ],
+        payload={"target": list(target), "kind_note": "probe_kill"},
+        rationale=(
+            f"Freshest single eye, cheapest ordnance. {victim_note}{fresh}. "
+            "SNAP is 100 blue and one hour-slot — half the blue of an EMP, "
+            "same hour. Where EMP kills 2-3 probes for the cost of a whole "
+            "salvo, SNAP kills ONE for the cost of a chain-step. Take it "
+            "when a probe you badly want dead sits alone, or when your BLUE "
+            "vault is running short and you cannot afford to build EMPs. "
+            "UNIQUE PROPERTY: resolves ABOVE the vision snapshot, so a drop "
+            "into this cell THIS hour is refused (an EMP fired on the same "
+            "cell only denies from NEXT hour). If a rival is about to land, "
+            "the SNAP is the only weapon that stops them tonight."
+        ),
+    )
+
+
+def _snap_strike_option(
+    target: Tuple[int, int], *,
+    beacon: Tuple[int, int],
+    probes_covering: int,
+    total_visible_probes: Sequence[Tuple[int, int]],
+    freshness_days: Optional[int],
+) -> Option:
+    """SNAP a rival probe covering a NON-mine redsign's pure cell.
+
+    Telemetry on the line: how many rival probes currently see the pure,
+    which one this shot kills, and a plain-English note that the play is
+    only really effective at ~1 (kills the sole eye = denies the drop) and
+    degrades sharply above that.
+    """
+    fresh = (
+        f" (last seen day {int(freshness_days)})"
+        if freshness_days is not None else ""
+    )
+    others = [c for c in total_visible_probes if c != target]
+    others_txt = (
+        f"; {len(others)} other probe(s) still see the beacon: {others}"
+        if others else ""
+    )
+    if probes_covering <= 1:
+        eff_head = "STRONG"
+        effectiveness = (
+            "STRONG — this is the rival's SOLE eye on the pure. Killing it "
+            "removes their live coverage: their next drop into this cell is "
+            "refused for lack of vision (§3.9.7), THIS NIGHT. That is exactly "
+            "the outcome a full BLIND_SCORCH tries to buy for twice the blue "
+            "and a whole harvester's outing."
+        )
+    elif probes_covering == 2:
+        eff_head = "DEGRADED"
+        effectiveness = (
+            "DEGRADED — a second rival probe also sees the pure. This SNAP "
+            "removes ONE eye; the drop is still legal from the other. Half "
+            "the denial for the same cost. Take it only when the second "
+            "probe is about to expire or when you have another way to blind "
+            "the second eye this night (SS on it, or a follow-up SNAP)."
+        )
+    else:
+        eff_head = "WEAK"
+        effectiveness = (
+            f"WEAK — {probes_covering} rival probes see this pure. Killing "
+            "one is one-in-many denial; the drop still lands. Save the "
+            "charge for a lower-vision target."
+        )
+    return Option(
+        option_id="SNAP_STRIKE",
+        kind="snap",
+        title=(
+            f"SNAP the finder's probe {_fmt_cell(target)} on rival redsign "
+            f"@{_fmt_cell(beacon)}"
+        ),
+        detail=(
+            f"One round, one cell, ONE hour-slot. Kills probe "
+            f"{_fmt_cell(target)}; the beacon at {_fmt_cell(beacon)} is "
+            f"currently lit by {probes_covering} rival probe(s). "
+            f"Effectiveness: {eff_head}."
+        ),
+        execute_lines=[
+            f"SNAP_STRIKE: snap at {list(target)} "
+            f"(ONE cell, ONE charge — kills 1 of {probes_covering} probes "
+            f"covering the rival redsign @{list(beacon)})"
+        ],
+        payload={
+            "target": list(target),
+            "beacon": list(beacon),
+            "probes_covering": int(probes_covering),
+            "kind_note": "rival_redsign_finder",
+        },
+        rationale=(
+            f"TELEMETRY: rival redsign @{beacon} is lit by "
+            f"{probes_covering} rival probe(s) right now{others_txt}. "
+            f"Freshest eye is at {target}{fresh}. "
+            f"EFFECTIVENESS: {effectiveness} "
+            "SNAP resolves ABOVE the vision snapshot (§4.9.4), so a drop "
+            "into a cell whose sole lighting probe you just killed is "
+            "refused THIS NIGHT, not next. That is the property this play "
+            "is buying, and it is worth 100 blue only when the coverage "
+            "count is genuinely 1. Compare to BLIND_SCORCH: same denial "
+            "outcome (rival cannot land), but BLIND_SCORCH costs 200 blue "
+            "and 3 hour-slots, and it puts YOUR harvester on the seam. "
+            "SNAP_STRIKE is the CHEAP option when you want denial only, "
+            "or when your BLUE vault cannot afford a BLIND_SCORCH build."
+        ),
+    )
+
+
+def _snap_options(
+    agent_view: Mapping[str, Any],
+    enemy_probes: Sequence[Mapping[str, Any]],
+) -> List[Option]:
+    """Every SNAP play worth offering tonight, best first.
+
+    Order: SNAP_STRIKE (rival redsign, targeted) then SNAP_KILL (freshest
+    single eye anywhere). Only surfaces when the rack has ≥1 SNAP and there
+    is at least one enemy probe on the board.
+    """
+    rack = scorch.stock(agent_view)
+    if rack.get("snap", 0) <= 0:
+        return []
+    if not enemy_probes:
+        return []
+    out: List[Option] = []
+
+    # SNAP_STRIKE — only offered when the rival redsign's pure cell is
+    # covered by ≤2 rival probes (per doctrine: effectiveness collapses
+    # above that). Pick the FRESHEST probe covering the pure.
+    r_cells, region, _notes = _rival_redsign_cells(agent_view)
+    if region is not None and region.get("pure_cells"):
+        pure = scorch._cell(region["pure_cells"][0])
+        if pure is not None:
+            reach = probe_vision_radius()
+            probes_covering: List[Tuple[Tuple[int, int], int]] = []
+            for row in (enemy_probes or []):
+                if not isinstance(row, Mapping):
+                    continue
+                at = _cell_of(row.get("at"))
+                if at is None:
+                    continue
+                # Euclidean disk r=4: dx² + dy² <= reach².
+                dx, dy = at[0] - pure[0], at[1] - pure[1]
+                if dx * dx + dy * dy <= reach * reach:
+                    probes_covering.append((at, int(row.get("day_seen") or 0)))
+            probes_covering.sort(key=lambda t: -t[1])
+            if probes_covering and len(probes_covering) <= 2:
+                target, day_seen = probes_covering[0]
+                out.append(_snap_strike_option(
+                    target,
+                    beacon=(pure[0], pure[1]),
+                    probes_covering=len(probes_covering),
+                    total_visible_probes=[p for p, _ in probes_covering],
+                    freshness_days=day_seen or None,
+                ))
+
+    # SNAP_KILL — freshest enemy probe on the board, regardless of what it
+    # covers. Cheap single-target denial when the redsign play doesn't fit.
+    freshest: Optional[Tuple[Tuple[int, int], int, str]] = None
+    for row in (enemy_probes or []):
+        if not isinstance(row, Mapping):
+            continue
+        at = _cell_of(row.get("at"))
+        if at is None:
+            continue
+        d = int(row.get("day_seen") or 0)
+        owner = str(row.get("owner") or "a rival")
+        if freshest is None or d > freshest[1]:
+            freshest = (at, d, owner)
+    if freshest is not None:
+        target, day_seen, owner = freshest
+        already_targeted = any(
+            tuple(o.payload.get("target") or []) == tuple(target)
+            for o in out
+        )
+        if not already_targeted:
+            out.append(_snap_kill_option(
+                target,
+                victim_note=f"{owner}'s probe",
+                freshness_days=day_seen or None,
+            ))
+    return out
+
+
 def _rival_redsign_cells(
     agent_view: Mapping[str, Any],
 ) -> Tuple[List[Tuple[int, int]], Optional[Mapping[str, Any]], List[str]]:
@@ -1077,6 +1301,13 @@ def build_registry(
     for opt in _emp_options(agent_view, enemy_probes):
         reg[opt.option_id] = opt
 
+    # v13 — SNAP plays (the third weapon shape). Registered right after the
+    # EMP salvos so a thinker reading the menu top-down meets both weapon
+    # families in one block, and the SNAP entries carry their own kind
+    # ("snap") so the menu header can name them separately.
+    for opt in _snap_options(agent_view, enemy_probes):
+        reg[opt.option_id] = opt
+
     for p in seam_patterns or []:
         if isinstance(p, SeamPattern):
             opt = _seam_option(p)
@@ -1258,6 +1489,7 @@ def _apply_hazard(reg: "OrderedDict[str, Option]", hazard_cells: Collection[Any]
 # ── menu render (for the thinker prompt) ────────────────────────────────
 _KIND_HEADERS = [
     ("emp", "EMP SALVOS — ids BLIND_SCORCH* / EMP_SCORCH / SCORCH_REDSIGN (you own a charge; ONE hour-slot, fires at hour 1, 8h cloud, kills probes, friendly fire ON. BLIND_SCORCH* shapes the salvo to leave a hole you then OCCUPY — prefer it: same denial, and you end the night on the ground)"),
+    ("snap", "SNAP ROUNDS — ids SNAP_KILL / SNAP_STRIKE (you own a SNAP; ONE cell, ONE hour, 100 blue — cheapest ordnance in the game. Unique property: SNAP resolves ABOVE the vision snapshot (§4.9.4), so a rival landing into the SNAPped cell THIS HOUR is refused, not next. This is the smash-and-grab counter: an EMP fired on the same cell only denies from NEXT hour. Use for cheap single-cell denial, single-eye probe kill, or to block a rival's H1 landing on a contested pure)"),
     ("grab", "PRIORITY RED GRABS — ids GRAB* (mass/pure RED you can SEE or reach — the highest-value take, no probe; grab it FIRST)"),
     ("seam", "REDSIGN PATTERNS (multi-wave campaigns — pick & order by case; when you hold an EMP charge and a redsign is live, SMASH_THEN_LOCK (your own seam) and RACE_CRASH_EMP (shared vision) compound plays package the smash + salvo + follow-up harvester waves as ONE id — pick the one matching the REDSIGN STATE. For a rival redsign you cannot see, BLIND_SCORCH in the EMP SALVOS block above IS the shield play — no compound needed)"),
     ("hotdrop", "HOT DROPS (probe+drop into fresh fog this night)"),

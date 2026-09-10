@@ -33,6 +33,7 @@ under test.
 
 from __future__ import annotations
 
+import pathlib
 import re
 import sys
 import time
@@ -47,6 +48,10 @@ from server import tunnel as soc_tunnel
 # Captured before the autouse stub below replaces it, so the gate's own
 # tests can exercise the real implementation.
 _REAL_RESOLVES = soc_tunnel._hostname_resolves
+
+# The shutdown test starts a *separate* interpreter, which needs the repo
+# on its path the way pytest.ini puts it on ours.
+_REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
@@ -439,6 +444,517 @@ def test_a_stopped_tunnel_reports_no_rotations():
     st = soc_tunnel.status()
     assert st["serving"] is None
     assert st["rotations"] == 0
+
+
+# ── the downgrade must not be silent (v1.46) ─────────────────────────
+#
+# A three-way game ran the whole way on localhost.run *with cloudflared
+# installed*, rotated twice and died, and nobody could have known they
+# were on the fallback: ``start`` built a failures list and dropped it the
+# instant a later provider won, so success looked identical either way.
+# Falling through is always a positive failure of everything above, never
+# a race, so the reason exists at the moment it used to be discarded.
+
+_COMPLAINS = (
+    "print('ERR  couldn't connect to the edge', flush=True)\n"
+    "import sys; sys.exit(3)"
+)
+
+
+def test_falling_through_records_which_provider_was_lost_and_why(monkeypatch):
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("dead", _EXITS, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    res = soc_tunnel.start(8000, wait_s=20)
+    assert res["provider"] == "good"
+    skipped = res["skipped"]
+    assert [s["provider"] for s in skipped] == ["dead"]
+    assert skipped[0]["error"], "a skip with no reason is the bug, restated"
+
+
+def test_winning_on_the_first_provider_skips_nothing(monkeypatch):
+    """The case that has to stay distinguishable from a downgrade — an
+    empty list is how the UI knows not to warn."""
+    monkeypatch.setattr(
+        soc_tunnel, "PROVIDERS",
+        [_fake("good", _PUBLISHES, r"https://good\.example\.test")],
+    )
+    assert soc_tunnel.start(8000, wait_s=10)["skipped"] == []
+    assert soc_tunnel.status()["skipped"] == []
+
+
+def test_the_downgrade_is_still_there_when_the_ui_asks_later(monkeypatch):
+    """The share card polls ``status`` long after ``start`` returned, so
+    the reason has to outlive the call that discovered it."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("dead", _EXITS, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    soc_tunnel.start(8000, wait_s=20)
+    assert [s["provider"] for s in soc_tunnel.status()["skipped"]] == ["dead"]
+
+
+def test_a_failed_provider_keeps_what_it_actually_said(monkeypatch):
+    """"exited before publishing a URL" says we saw no URL. The provider
+    usually said why on the line before, and that line is the difference
+    between a diagnosis and a shrug."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("chatty", _COMPLAINS, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    res = soc_tunnel.start(8000, wait_s=20)
+    tail = res["skipped"][0]["tail"]
+    assert any("couldn't connect to the edge" in ln for ln in tail), tail
+
+
+def test_the_kept_output_cannot_grow_without_bound(monkeypatch):
+    """This drains a live subprocess for the whole session, so it is a
+    ring buffer or it is a leak."""
+    noisy = (
+        "for i in range(500): print('line %d' % i, flush=True)\n"
+        "import sys; sys.exit(1)"
+    )
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("noisy", noisy, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    res = soc_tunnel.start(8000, wait_s=20)
+    assert len(res["skipped"][0]["tail"]) <= soc_tunnel._TAIL_LINES
+
+
+def test_a_starved_provider_is_not_blamed_for_failing(monkeypatch):
+    """Running out of shared budget means this one was never tried. Filing
+    it as its own failure sends the reader after the wrong provider."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("slow", _SILENT, r"https://never\.example\.test", wait_s=2.0),
+        _fake("starved", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    res = soc_tunnel.start(8000, wait_s=2.0)
+    assert res["ok"] is False
+    starved = [s for s in res["skipped"] if s["provider"] == "starved"]
+    assert starved and "out of time" in starved[0]["error"]
+
+
+def test_reusing_a_tunnel_still_reports_the_original_downgrade(monkeypatch):
+    """Reuse is the common path — the share card asks again every time
+    someone opens it — and the links expire for the same reason they
+    always did. Reporting a clean slate here would hide the warning from
+    exactly the screen that hands out the links."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("dead", _EXITS, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", rotates=True),
+    ])
+    soc_tunnel.start(8000, wait_s=20)
+    again = soc_tunnel.start(8000, wait_s=20)
+    assert again["reused"] is True
+    assert [s["provider"] for s in again["skipped"]] == ["dead"]
+    assert again["rotates"] is True
+
+
+def test_stopping_forgets_the_downgrade(monkeypatch):
+    """Stale advice about a tunnel that no longer exists is worse than
+    none: the next start may well pick a different provider."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("dead", _EXITS, r"https://never\.example\.test"),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test"),
+    ])
+    soc_tunnel.start(8000, wait_s=20)
+    soc_tunnel.stop()
+    assert soc_tunnel.status()["skipped"] == []
+
+
+# ── budget arithmetic (v1.46) ────────────────────────────────────────
+#
+# The bug these pin is an accounting one, and it is nastier than it
+# sounds because its symptom is "no tunnel at all" on a machine where
+# both providers work. The DNS gate used to run *after* the per-provider
+# polling loop and so outside ``wait_s``, while still spending the shared
+# deadline: an unlucky first provider could publish slowly, fail the gate
+# and walk off with 48s of a 60s budget, handing the fallback 12s against
+# the 25 it needs just to negotiate SSH.
+
+def test_the_gate_is_charged_to_the_provider_that_runs_it():
+    """A provider's cost is publish *and* accept. Budgeting only the first
+    is what let the gate spend someone else's time."""
+    prov = _fake("p", _SILENT, "x", wait_s=20.0)
+    assert soc_tunnel._provider_cost(prov) == 20.0 + soc_tunnel._gate_cost()
+
+
+def test_the_gate_cost_is_derived_from_its_own_dials():
+    """Written down as a literal it would rot the moment someone retuned
+    the grace, and the budget arithmetic downstream would quietly stop
+    being true — which is the original bug, one level up."""
+    assert soc_tunnel._gate_cost() == (
+        soc_tunnel._DNS_GRACE_S + 2 * soc_tunnel._DNS_RETRY_S
+    )
+
+
+def test_the_gate_gives_up_retries_before_it_gives_up_grace():
+    """Being *early* is the failure that poisons the resolver for half an
+    hour (v1.18), so a squeezed gate must shed retries and never shorten
+    the grace. One lookup after the full grace is the floor."""
+    assert soc_tunnel._tries_within(0) == 1
+    assert soc_tunnel._tries_within(soc_tunnel._DNS_GRACE_S) == 1
+    assert soc_tunnel._tries_within(soc_tunnel._DNS_GRACE_S
+                                    + soc_tunnel._DNS_RETRY_S) == 2
+    assert soc_tunnel._tries_within(None) == 3
+
+
+def test_the_shipped_budget_lets_both_real_providers_publish():
+    """The regression in numbers. At the old 60s, honest accounting
+    squeezed *cloudflare* — the provider whose hostname survives the
+    session — below its own publish window, so the room would drift onto
+    the rotating fallback by arithmetic rather than by circumstance."""
+    cf, lhr = soc_tunnel.PROVIDERS
+    budget = 75.0
+    allowance = max(
+        soc_tunnel._provider_floor(cf),
+        min(soc_tunnel._provider_cost(cf), budget - soc_tunnel._provider_floor(lhr)),
+    )
+    assert min(cf.wait_s, allowance) == cf.wait_s
+    # ...and the fallback still gets a full SSH negotiation afterwards.
+    assert budget - allowance >= soc_tunnel._provider_floor(lhr)
+
+
+def test_a_slow_first_provider_cannot_starve_the_fallback(monkeypatch):
+    """The whole point. The first provider burns its patience without
+    publishing; the second must still get enough time to work."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("hog", _SILENT, r"https://never\.example\.test", wait_s=3.0),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=3.0),
+    ])
+    res = soc_tunnel.start(8000, wait_s=6.0)
+    assert res["ok"] is True, res
+    assert res["provider"] == "good"
+
+
+def test_no_provider_is_squeezed_below_the_point_of_working(monkeypatch):
+    """A tight budget overruns rather than handing out attempts designed
+    to fail. Half a publish window is not a cheap try, it is a guaranteed
+    loss that also costs the time it took."""
+    seen: list[float] = []
+    real = soc_tunnel._TunnelManager._try_provider
+
+    def _record(self, prov, port, wait_s, allowance=None):
+        seen.append(wait_s)
+        return real(self, prov, port, wait_s, allowance)
+
+    monkeypatch.setattr(soc_tunnel._TunnelManager, "_try_provider", _record)
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    soc_tunnel.start(8000, wait_s=1.0)
+    assert seen and all(w > 0 for w in seen), seen
+
+
+# ── retrying the preferred provider (v1.46) ──────────────────────────
+
+def test_the_preferred_provider_gets_a_second_chance(monkeypatch):
+    """Its failures are timing, not verdicts: a URL a second late, a DNS
+    record not up yet. Losing one coin flip used to buy a whole session
+    on a provider that rotates its hostname every few minutes."""
+    tries = {"n": 0}
+    # Fails once, then publishes — the transient miss that cost a game.
+    flaky = _fake("flaky", _EXITS, r"https://good\.example\.test", wait_s=3.0)
+    real = soc_tunnel._TunnelManager._try_provider
+
+    def _flaky(self, prov, port, wait_s, allowance=None):
+        if prov.name == "flaky":
+            tries["n"] += 1
+            if tries["n"] == 1:
+                return {"ok": False, "error": "transient", "tail": []}
+            return {"ok": True, "url": "https://good.example.test",
+                    "running": True, "provider": "flaky", "rotates": False}
+        return real(self, prov, port, wait_s, allowance)
+
+    monkeypatch.setattr(soc_tunnel._TunnelManager, "_try_provider", _flaky)
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        flaky,
+        _fake("rotator", _PUBLISHES2, r"https://other\.example\.test",
+              rotates=True),
+    ])
+    res = soc_tunnel.start(8000, wait_s=40.0)
+    assert res["provider"] == "flaky", res
+    assert tries["n"] == 2
+    # Won on retry, so nothing was skipped and no downgrade is reported.
+    assert res["skipped"] == []
+
+
+def test_the_last_provider_is_not_retried(monkeypatch):
+    """There is nothing behind it to protect, so a second attempt only
+    delays an honest failure — and delay is what the caller is short of."""
+    tries = {"n": 0}
+    real = soc_tunnel._TunnelManager._try_provider
+
+    def _count(self, prov, port, wait_s, allowance=None):
+        tries["n"] += 1
+        return real(self, prov, port, wait_s, allowance)
+
+    monkeypatch.setattr(soc_tunnel._TunnelManager, "_try_provider", _count)
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("only", _EXITS, r"https://never\.example\.test", wait_s=2.0),
+    ])
+    assert soc_tunnel.start(8000, wait_s=20.0)["ok"] is False
+    assert tries["n"] == 1
+
+
+def test_a_retry_is_skipped_when_it_would_eat_the_fallback(monkeypatch):
+    """The retry is a use of spare budget, not a claim on the fallback's.
+    A provider that fails *slowly* has already spent its second chance."""
+    tries = {"n": 0}
+    real = soc_tunnel._TunnelManager._try_provider
+
+    def _count(self, prov, port, wait_s, allowance=None):
+        if prov.name == "slowfail":
+            tries["n"] += 1
+        return real(self, prov, port, wait_s, allowance)
+
+    monkeypatch.setattr(soc_tunnel._TunnelManager, "_try_provider", _count)
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("slowfail", _SILENT, r"https://never\.example\.test", wait_s=3.0),
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=2.0),
+    ])
+    res = soc_tunnel.start(8000, wait_s=3.5)
+    assert tries["n"] == 1, "retried into the fallback's budget"
+    assert res["provider"] == "good", res
+
+
+# ── reviving a tunnel that died on its own (v1.46) ───────────────────
+#
+# The failure this closes: a provider dropped the tunnel mid-game and the
+# watchdog, having noticed, simply returned. Nothing restarted it, so the
+# game was off the air permanently and silently.
+
+def test_a_tunnel_that_dies_is_brought_back(monkeypatch):
+    """The one that cost a session. A new hostname is not a reason to stay
+    down — a fresh link beats a dead server."""
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.05)
+    dies = ("print('tunnelled at https://good.example.test ok', flush=True)\n"
+            "import time; time.sleep(1.0)")
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("flappy", dies, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    assert soc_tunnel.start(8000, wait_s=20.0)["ok"] is True
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if soc_tunnel.status().get("revivals"):
+            break
+        time.sleep(0.2)
+    st = soc_tunnel.status()
+    assert st["revivals"] >= 1, st
+    assert st["running"] is True or st["reviving"] is True, st
+
+
+def test_an_explicit_stop_is_not_undone_by_the_watchdog(monkeypatch):
+    """The safety interlock. A supervisor that cannot tell "it died" from
+    "a human closed it" would make the stop button advisory."""
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.05)
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    assert soc_tunnel.start(8000, wait_s=20.0)["ok"] is True
+    soc_tunnel.stop()
+    time.sleep(1.0)
+    st = soc_tunnel.status()
+    assert st["running"] is False, st
+    assert st["revivals"] == 0, st
+
+
+def test_revivals_are_bounded(monkeypatch):
+    """A provider refusing us in a loop must not become an unattended
+    retry storm against someone else's service."""
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.02)
+    monkeypatch.setattr(soc_tunnel, "_MAX_REVIVALS", 2)
+    dies = ("print('tunnelled at https://good.example.test ok', flush=True)\n"
+            "import time; time.sleep(0.3)")
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("flappy", dies, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    soc_tunnel.start(8000, wait_s=20.0)
+    time.sleep(4.0)
+    st = soc_tunnel.status()
+    assert st["revivals"] == 2, st
+    assert st["reviving"] is False, st
+    assert st["running"] is False, "should have given up, not kept flapping"
+
+
+def test_giving_up_still_says_how_hard_it_tried(monkeypatch):
+    """Zeroing the count on the way down would delete the post-mortem at
+    the moment it becomes the whole story. ``expected`` without
+    ``running`` or ``reviving`` is the "down for good" state."""
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.02)
+    monkeypatch.setattr(soc_tunnel, "_MAX_REVIVALS", 1)
+    dies = ("print('tunnelled at https://good.example.test ok', flush=True)\n"
+            "import time; time.sleep(0.3)")
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("flappy", dies, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    soc_tunnel.start(8000, wait_s=20.0)
+    time.sleep(3.0)
+    st = soc_tunnel.status()
+    assert st["expected"] is True, st
+    assert st["running"] is False and st["reviving"] is False, st
+    assert st["revivals"] == 1, st
+    # ...and an explicit stop is the one thing that clears it.
+    soc_tunnel.stop()
+    assert soc_tunnel.status()["expected"] is False
+    assert soc_tunnel.status()["revivals"] == 0
+
+
+def test_a_revival_does_not_refill_its_own_budget(monkeypatch):
+    """The trap in routing revivals through ``start``: the public entry
+    point resets the counter, so without the private flag the bound would
+    reset on every use and stop being a bound."""
+    mgr = soc_tunnel._TunnelManager()
+    mgr._revivals = 2
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    try:
+        mgr.start(8000, wait_s=20.0, _revival=True)
+        assert mgr._revivals == 2
+        mgr.stop()
+        mgr.start(8000, wait_s=20.0)
+        assert mgr._revivals == 0, "a human asking again is a fresh budget"
+    finally:
+        mgr.stop()
+
+
+def test_a_live_process_serving_a_dead_route_is_restarted(monkeypatch):
+    """The failure that actually took a game off the air.
+
+    localhost.run rotated its hostname out from under a session and served
+    503 on the old one for twelve minutes while ``ssh`` sat there perfectly
+    healthy. ``proc.poll()`` is ``None`` throughout, so watching the
+    process teaches us nothing — which is why `serving: false` existed at
+    all, and why recording it without acting on it left the one failure we
+    had genuinely observed as the one we did not repair.
+    """
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.05)
+    monkeypatch.setattr(soc_tunnel, "_ROUTE_DEAD_AFTER", 2)
+    # Answer once so the watchdog has a success to regress *from*, then
+    # refuse for good.
+    answers = iter([True, False, False, False, False, False, False])
+    monkeypatch.setattr(
+        soc_tunnel._TunnelManager, "_probe_once",
+        staticmethod(lambda url: next(answers, False)),
+    )
+    # Probe back-to-back rather than waiting out the real 30s interval.
+    monkeypatch.setattr(
+        soc_tunnel._TunnelManager, "_settle", staticmethod(
+            lambda proc, seconds: proc.poll() is not None,
+        ),
+    )
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("stuck", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    assert soc_tunnel.start(8000, wait_s=20.0)["ok"] is True
+
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if soc_tunnel.status()["revivals"]:
+            break
+        time.sleep(0.2)
+    assert soc_tunnel.status()["revivals"] >= 1, soc_tunnel.status()
+
+
+def test_a_route_that_never_worked_is_not_treated_as_a_regression(monkeypatch):
+    """No prior success means we cannot tell a dead route from a probe
+    path that never worked from here — a corporate resolver, say. Counting
+    those would restart in a loop over a tunnel guests can reach fine."""
+    monkeypatch.setattr(soc_tunnel, "_REVIVE_DELAY_S", 0.05)
+    monkeypatch.setattr(soc_tunnel, "_ROUTE_DEAD_AFTER", 2)
+    monkeypatch.setattr(
+        soc_tunnel._TunnelManager, "_probe_once", staticmethod(lambda url: False),
+    )
+    monkeypatch.setattr(
+        soc_tunnel._TunnelManager, "_settle", staticmethod(
+            lambda proc, seconds: proc.poll() is not None,
+        ),
+    )
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("quiet", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    assert soc_tunnel.start(8000, wait_s=20.0)["ok"] is True
+    time.sleep(2.0)
+    st = soc_tunnel.status()
+    assert st["revivals"] == 0, st
+    assert st["running"] is True, st
+    # ...and it says "can't tell" rather than accusing the tunnel.
+    assert st["serving"] is None, st
+
+
+def test_shutting_the_server_down_leaves_no_orphan(tmp_path):
+    """Revival turns a tidy-up into a correctness requirement.
+
+    On Ctrl-C the tunnel client shares our process group and takes the
+    signal too — which is exactly the death the watchdog now exists to
+    repair. Without the intent being cleared first it would spawn a
+    replacement moments before the interpreter exits, and that one
+    outlives us, holding a public tunnel to a port nothing is listening
+    on. Runs a real server-like process so the ``atexit`` path is the
+    thing under test rather than a stand-in for it.
+    """
+    import os
+    import subprocess
+
+    pidfile = tmp_path / "client.pid"
+    inner = f'''
+import sys, time, re
+sys.path.insert(0, {str(_REPO)!r})
+from server import tunnel as t
+t._REVIVE_DELAY_S = 0.05
+t._hostname_resolves = lambda host, **kw: True
+script = ("import os, time\\n"
+          "open({str(pidfile)!r}, 'w').write(str(os.getpid()))\\n"
+          "print('tunnelled at https://good.example.test ok', flush=True)\\n"
+          "time.sleep(600)")
+t.PROVIDERS = [t.Provider(name='fake', binary=sys.executable,
+    argv=lambda port: [sys.executable, '-c', script],
+    url_re=re.compile(r'https://good\\.example\\.test'),
+    install_hint='x', wait_s=6.0, rotates=False)]
+print('OK' if t.start(8000, wait_s=20.0).get('ok') else 'FAIL', flush=True)
+time.sleep(600)
+'''
+    server = subprocess.Popen(
+        [sys.executable, "-c", inner], stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert server.stdout.readline().strip() == "OK"
+        pid = int(pidfile.read_text())
+
+        def _alive() -> bool:
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+
+        # Guard against the probe quietly testing nothing.
+        assert _alive(), "tunnel client was never up"
+        server.send_signal(2)  # Ctrl-C
+        server.wait(timeout=30)
+        time.sleep(2.0)
+        assert not _alive(), "left a tunnel client orphaned after shutdown"
+    finally:
+        if server.poll() is None:
+            server.kill()
+
+
+def test_a_dead_tunnel_remembers_which_port_to_come_back_on(monkeypatch):
+    """``_stop_locked`` clears ``_port`` and also runs between provider
+    attempts, so the revival cannot read the port from there."""
+    monkeypatch.setattr(soc_tunnel, "PROVIDERS", [
+        _fake("good", _PUBLISHES, r"https://good\.example\.test", wait_s=4.0),
+    ])
+    soc_tunnel.start(8123, wait_s=20.0)
+    mgr = soc_tunnel._manager
+    with mgr._lock:
+        mgr._stop_locked()
+        assert mgr._port is None
+        assert mgr._want_port == 8123
+        assert mgr._wanted is True
 
 
 # ── the regexes, against real observed output ────────────────────────

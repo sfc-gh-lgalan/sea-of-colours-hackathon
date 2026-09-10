@@ -191,7 +191,7 @@ the directory loses nothing.
 
 `No bakes yet` means no recorded run. `--record` is opt-in; a plain
 `soc suite` writes nothing. If the board draws blank after a change to
-the recorder, run `python scripts/_probe_battle_room.py` — it opens the
+the recorder, run `python backstage/probes/_probe_battle_room.py` — it opens the
 room in a real browser over `file://`, clicks a failing turn, works the
 transport and the fog toggle, and fails loudly on a console error. A
 static page cannot report its own breakage, which is the entire reason

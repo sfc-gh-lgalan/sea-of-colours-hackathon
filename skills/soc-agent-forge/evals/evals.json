@@ -1,0 +1,85 @@
+{
+  "skill": "soc-agent-forge",
+  "notes": "Cases 1-4 check triggering and phase routing. Case 5 checks the skill defends a default rather than obeying a request that destroys the artefact. Case 6 checks it does not over-scope a diagnosis question into a full build.",
+  "cases": [
+    {
+      "id": "mint-first-agent",
+      "prompt": "I want to mint my team's Sea of Colours agent",
+      "expect": {
+        "triggers": true,
+        "loads": ["phases/0-mint.md"],
+        "asks_for": ["team and agent name", "participants"],
+        "must_say": "a fresh fork scores four FAILs on soc weapons and that is correct",
+        "must_not": "claim a fresh fork passes all four rungs"
+      }
+    },
+    {
+      "id": "give-it-emps",
+      "prompt": "I want to give my agent EMPs",
+      "expect": {
+        "triggers": true,
+        "loads": ["phases/1-choose.md", "references/archetypes.md"],
+        "behaviour": "offers the five archetypes as multiple choice rather than open-ended questions; asks what the agent should DO with the EMP; asks for a name; warns that EMP is 200 blue and needs a geometry helper",
+        "must_not": "start editing files before a name and trigger exist"
+      }
+    },
+    {
+      "id": "wont-fire",
+      "prompt": "my agent has a snap in the rack but it never fires it",
+      "expect": {
+        "triggers": true,
+        "loads": ["references/diagnosis.md"],
+        "behaviour": "classifies against the five causes before proposing an edit; runs check_wiring.py; checks the chat_schema enum and the last_night tag sets",
+        "must_say": "soc weapons is a smoke test, not a verdict"
+      }
+    },
+    {
+      "id": "read-the-season",
+      "prompt": "here is all-cards.md from last night's season, why did we lose",
+      "expect": {
+        "triggers": true,
+        "loads": ["phases/5-iterate.md"],
+        "behaviour": "checks fallback_turns before interpreting any score; asks why not what; identifies which argument the option lost rather than adding doctrine",
+        "must_not": "recommend adding a new doctrine block as the first fix"
+      }
+    },
+    {
+      "id": "defend-the-default",
+      "prompt": "run me three seasons on the memory backend, it's faster",
+      "expect": {
+        "triggers": true,
+        "behaviour": "declines the memory backend and explains that file is already the default, is offline, needs no account, and is replayable; notes memory keeps the cards and destroys the session; proceeds on file and echoes the ?session= URL",
+        "must_not": "silently pass --backend memory"
+      }
+    },
+    {
+      "id": "no-overscope",
+      "prompt": "what does soc weapons actually check?",
+      "expect": {
+        "triggers": true,
+        "behaviour": "answers the question — substring greps over source, filename-based rung 2, all four can PASS with no working weapon; and notes it under-reports a forge-installed agent",
+        "must_not": "launch the full mint-and-arm workflow for a question that only wanted an explanation"
+      }
+    },
+    {
+      "id": "push-refused",
+      "prompt": "soc push says 'changes outside sea_of_colours/.../my_agent/' and lists a doc I edited. Can I just force it?",
+      "expect": {
+        "triggers": true,
+        "loads": ["references/publishing.md"],
+        "behaviour": "explains the reason is DIVERGENCE not tidiness — only that directory is lifted into the league, so an out-of-folder change silently does not travel and the agent behaves differently there than locally; gives 'git checkout -- <path>' then 'soc push --dry-run'",
+        "must_not": "recommend --force, or describe the guardrail as mere tidiness"
+      }
+    },
+    {
+      "id": "wrong-remote",
+      "prompt": "I cloned the repo this morning and I've been building all day, am I ready to submit?",
+      "expect": {
+        "triggers": true,
+        "loads": ["references/publishing.md"],
+        "behaviour": "treats 'cloned' as a red flag and checks the remote FIRST via soc doctor's 'publishing to' line, because cloning the organiser's repo instead of forking is invisible until the deadline; then confirms pushing is not entering",
+        "must_not": "assume the remote is correct, or go straight to a final season run"
+      }
+    }
+  ]
+}

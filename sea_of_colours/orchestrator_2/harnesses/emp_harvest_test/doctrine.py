@@ -961,6 +961,87 @@ redsign is live and the QUIET NIGHT rule at the bottom applies.
 """
 
 
+DOCTRINE_SNAP = """\
+FIRE A SNAP — the third weapon shape (v1.36, §4.9.4). One missile, one
+cell, one hour hot. Cheapest ordnance in the game (100 blue vs EMP's 200,
+chaff's 300) and — the property that decides most calls — it resolves
+ABOVE the hour-start vision snapshot. An EMP fired on cell X denies drops
+into X from the NEXT hour. A SNAP fired on cell X denies the drop into X
+THIS hour. That single sentence is why SNAP exists.
+
+You own SNAP stock (see YOUR RACK, `snap x N`). Menu offers [SNAP_KILL],
+[SNAP_STRIKE], and — on shared-vision redsign nights — [SNAP_BLOCK].
+
+  THE SIGNATURE PROPERTY. SNAP is the only weapon that stops a rival's
+  same-hour landing. On a public redsign, both seats race H1 with a drop
+  onto the advertised pure. Fire a SNAP at the pure cell at H1 and the
+  rival's drop finds no live vision (the SNAP already killed the probe
+  under the vision snapshot) — the drop is refused, they're damaged in
+  orbit, and they don't spend their outing (§3.9.2). You then drop at
+  H2 on the (now cool) cell and auto-harvest the pure. This is the
+  smash-and-grab counter, and no other weapon in the game does it.
+
+  THE THREE SNAP PLAYS — pick by TARGET:
+
+  SNAP_KILL — freshest single enemy probe, anywhere on the board:
+    * One SNAP, one cell, one hour-slot. 100 blue vs 200 for an EMP that
+      would kill 2-3 probes at once. Use SNAP_KILL when only ONE probe is
+      worth killing and you cannot afford to build EMPs.
+    * Fire it FIRST or not at all. A probe you kill at H1 is a night of
+      vision the rival never converts. A probe you kill at H15 destroyed
+      information they already used.
+    * On a QUIET night (no redsign), SNAP_KILL is the same play as
+      EMP_SCORCH on a single probe — same denial, half the blue.
+
+  SNAP_STRIKE — kill the finder's probe on a RIVAL'S redsign:
+    * Only offered when the rival's redsign is live, you cannot see the
+      pure yourself, and the pure is covered by ≤2 rival probes.
+    * The menu line carries TELEMETRY: how many rival probes currently see
+      the pure and which one this shot kills. Read it. The play's value is
+      inversely proportional to that count — STRONG at 1, DEGRADED at 2,
+      not offered at 3+.
+    * At 1 rival probe: this is the CHEAP alternative to BLIND_SCORCH.
+      Same denial outcome (rival cannot drop tonight) for HALF the blue
+      (100 vs 200) and no harvester tied up in a cloud.
+    * At 2 rival probes: you're spending 100 blue for half the denial.
+      Take it only if the second eye is about to expire or you can blind
+      it another way (SS on it, or a follow-up SNAP).
+    * The card also shows the SECOND probe's cell so you can plan the
+      follow-up denial.
+
+  SNAP_BLOCK — case C, shared vision, one harvester (the compound):
+    * H1 SNAP the pure; H2 drop OUR harvester on the (now cool) cell.
+    * Cheaper than RACE_CRASH_EMP (100 blue vs 200), works with one
+      harvester (RACE_CRASH_EMP needs two), no reliance on mutual crash.
+    * Skip if chaff is in play — chaff cancels a SNAP the same way it
+      cancels an EMP (§4.9.4/§4.9.5).
+
+  WHEN NOT TO — the SNAP-specific traps:
+    * NEVER SNAP a cell YOUR harvester is planning to land on THAT hour.
+      Friendly fire is on. A SNAP at H1 on cell X means any friendly
+      drop on X at H1 is refused too (damaged in orbit, no outing). Land
+      at H2 or later — the cell cools at the next hour.
+    * NEVER SNAP a cell you cannot walk to at H2. The play only works if
+      you can convert the denial into a harvest. If you fire the SNAP and
+      then leave the cell to the rival's H2 landing, you've spent 100
+      blue to make them land one hour later.
+    * NEVER SNAP for area denial. SNAP is one cell. If you need to darken
+      a smear, use BLIND_SCORCH or SCORCH_REDSIGN. If you use SNAP for
+      area, you're just wasting a cheap ordnance on a job it isn't for.
+
+  WHEN A RIVAL HOLDS SNAP — the threat model changes:
+    * A public pure with a rival holding SNAP is a trap for a smash-and-
+      grab. They can hot-mark the pure at H1 and your landing is refused.
+      Assume it will happen. Options: (a) drop OFFSET (adjacent to the
+      pure, walk in at H2) — SNAP only guards its one cell; (b) walk in
+      from a live probe with no drop needed; (c) skip the pure and take
+      certain red elsewhere.
+    * A rival's SNAP threat is visible in OPPONENT ARSENALS: `snap=N`.
+      If N>0, treat the advertised pure as SNAPpable — do not commit a
+      drop unless the offset option is genuinely worse.
+"""
+
+
 __all__ = [
     "STRATEGIES_CORE",
     "DOCTRINE_BLUE",
@@ -970,6 +1051,7 @@ __all__ = [
     "DOCTRINE_BEWARE_EMP",
     "DOCTRINE_BEWARE_CHAFF",
     "DOCTRINE_BEWARE_SNAP",
+    "DOCTRINE_SNAP",
     "DOCTRINE_COMPREHENSION",
     "DOCTRINE_CERTAINTY",
     "DOCTRINE_RISK_LADDER",

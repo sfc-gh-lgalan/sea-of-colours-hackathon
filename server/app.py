@@ -2368,11 +2368,25 @@ def api_tunnel_start(request: Request) -> dict[str, Any]:
     DNS acceptance gate before it counts, and the whole reason the gate
     exists is to hand over to the next provider. Budgeting only for the
     happy path would starve the fallback of the time it needs.
+
+    v1.46 — 75s, and the number is derived rather than picked. The gate is
+    now charged to the provider that runs it, and each attempt holds back
+    a floor for the providers behind it (``_provider_floor``). At 60s that
+    arithmetic squeezed *cloudflare* — the one whose hostname survives the
+    session — down to an 11s publish window and a single DNS lookup, which
+    is how you end up on the rotating fallback by accident. 75 is the
+    point where the preferred provider gets its full 20s and three
+    lookups while localhost.run keeps its 37s floor intact.
+
+    This only ever matters when things go wrong: the happy path is a URL
+    at ~6s and an accepted name at ~18s, and the client polls
+    ``/api/tunnel/status`` regardless, so a slow answer here is a spinner
+    rather than a failure.
     """
     from server import tunnel as soc_tunnel
 
     port = request.url.port or 8000
-    return soc_tunnel.start(int(port), wait_s=60.0)
+    return soc_tunnel.start(int(port), wait_s=75.0)
 
 
 @app.get("/api/tunnel/status")

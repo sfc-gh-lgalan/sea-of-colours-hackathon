@@ -9473,6 +9473,33 @@ body.cc-mode--lab #agent-cards-download {
 /* v1.17 — link-expiry warning on the invite card. Only rendered when the
    active tunnel provider rotates its hostname, so it must read as a
    caveat, not an error. */
+/* v1.46 — sits at the TOP, unlike the waiting strip at the bottom, and
+ * deliberately: the two can be true at once ("waiting for Markus" and
+ * "we cannot reach the server"), and the second is the one that explains
+ * why the first has stopped moving. Above the strip's z-index for the
+ * same reason. */
+.cc-offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5300;
+  padding: 7px 12px;
+  text-align: center;
+  background: rgba(28, 8, 8, 0.94);
+  border-bottom: 1px solid var(--danger, #e05b5b);
+  color: var(--danger, #e05b5b);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  animation: cc-offline-pulse 2s ease-in-out infinite;
+}
+.cc-offline-banner[hidden] { display: none !important; }
+@keyframes cc-offline-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
 .cc-share-expiry {
   font-size: 11px;
   line-height: 1.45;
@@ -9481,6 +9508,34 @@ body.cc-mode--lab #agent-cards-download {
   padding: 6px 0 6px 8px;
   margin-top: 2px;
   opacity: 0.9;
+}
+
+/* v1.46 — the tunnel-changed modal, in both its halves (host re-sharing
+   links, stranded player rejoining). Deliberately the share card's
+   geometry with an alarm palette rather than a new shape: it is the
+   invite card's bad day, and it appears unbidden over a game in
+   progress, so it has to read as urgent without reading as a crash. */
+.cc-tunnel-down .cc-share-card {
+  border-color: var(--danger, #e05b5b);
+  box-shadow: 0 0 28px rgba(224, 91, 91, 0.22);
+}
+.cc-tunnel-down-title {
+  color: var(--danger, #e05b5b);
+}
+.cc-tunnel-down-how {
+  color: var(--warn, #e8b339);
+  border-left: 2px solid var(--warn, #e8b339);
+  padding: 6px 0 6px 8px;
+}
+.cc-tunnel-down-err {
+  font-size: 11px;
+  color: var(--danger, #e05b5b);
+  letter-spacing: 0.06em;
+}
+.cc-tunnel-down-err[hidden] { display: none !important; }
+.cc-tunnel-down-dismiss {
+  align-self: flex-end;
+  margin-top: 4px;
 }
 .cc-seat-picker-btn {
   padding: 12px 14px;
@@ -10777,7 +10832,7 @@ button.cli-btn.cc-advisor-tab[hidden] { display: none; }
  * does not jump when the video's real dimensions arrive. */
 .soc-tut-stage {
   position: relative;
-  aspect-ratio: 8 / 5; /* == VIEWPORT in scripts/films/make_tutorial_films.py */
+  aspect-ratio: 8 / 5; /* == VIEWPORT in backstage/films/make_tutorial_films.py */
   background: #07070b;
   border-bottom: 1px solid var(--frame);
   overflow: hidden;
@@ -10872,6 +10927,35 @@ button.cli-btn.cc-advisor-tab[hidden] { display: none; }
 }
 .soc-tut-nav [hidden] { display: none; }
 .soc-tut-go { border-color: var(--green); color: var(--green); }
+
+/* Narration toggle (v1.47). Quiet until it is on — it sits next to
+ * "don't show these again", and a lit button beside a checkbox reads as
+ * the primary action when it is the least important control here.
+ *
+ * Qualified `button.` for the usual reason (see the note at
+ * .cc-queue-toolbar--mini): the base rule is `button.cli-btn` at
+ * specificity (0,1,1), so a bare `.soc-tut-narrate` loses and the
+ * button comes out full-size green as if it were the main action.
+ * Hover and focus are left alone deliberately — they should behave like
+ * every other button in the UI. */
+button.soc-tut-narrate {
+  font-size: 11px;
+  padding: 3px 8px;
+  color: var(--dim);
+  border-color: var(--frame);
+}
+button.soc-tut-narrate[hidden] { display: none; }
+
+/* Lit only AT REST. `button.cli-btn:hover` is also (0,2,1) and sits
+ * ~9400 lines earlier, so an unguarded `.is-on` wins on source order
+ * and repaints the text green ON the green hover fill — a solid block
+ * with the label invisible inside it. Excluding the two states that
+ * fill the background is what keeps hover behaving like every other
+ * button in the UI. */
+button.soc-tut-narrate.is-on:not(:hover):not(:focus-visible) {
+  color: var(--green);
+  border-color: var(--green);
+}
 
 .soc-tut-btn { margin-left: 10px; }
 

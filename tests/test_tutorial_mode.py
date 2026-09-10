@@ -1,6 +1,6 @@
 """Teaching mode: weapons and signs can be switched off (v1.32).
 
-The browser harness (``scripts/films/_fx_tutorial.py``) covers what a player
+The browser harness (``backstage/films/_fx_tutorial.py``) covers what a player
 SEES. This file covers what the engine ALLOWS, which is the half that
 matters if the two ever disagree: a hidden button the engine would have
 honoured is a cosmetic bug, but a visible-in-the-rules weapon the
@@ -405,7 +405,7 @@ def test_every_reel_points_at_a_film_that_exists():
     That is the right runtime behaviour and a terrible way to find out:
     the attendee gets a chapter about collisions with no collision in
     it, and the modal reports nothing. Renaming a film in
-    ``scripts/films/make_tutorial_films.py`` without renaming it here is the
+    ``backstage/films/make_tutorial_films.py`` without renaming it here is the
     exact way this happens.
     """
     missing = sorted(_referenced_films() - _shot_films())
@@ -450,7 +450,7 @@ def _shoot_turns() -> dict:
     module scope, and this assertion is about two tables agreeing — it
     has no business needing a browser installed to make it.
     """
-    src = (_REPO / "scripts" / "films" / "make_tutorial_films.py").read_text("utf-8")
+    src = (_REPO / "backstage" / "films" / "make_tutorial_films.py").read_text("utf-8")
     for node in ast.walk(ast.parse(src)):
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "_ADV_TURN" for t in node.targets

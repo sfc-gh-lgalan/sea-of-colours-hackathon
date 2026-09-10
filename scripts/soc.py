@@ -715,6 +715,19 @@ def cmd_doctor(args) -> int:
                 f"the upstream repo. Everything works until you push. Run "
                 f"`soc push` for the two commands that fix it."
             )
+        else:
+            unlinked = _not_a_real_fork("origin")
+            if unlinked:
+                problems.append(
+                    f"'origin' is {unlinked}, which is yours but is NOT a "
+                    f"fork — GitHub has no link from it back to the event "
+                    f"repo. Your work is safe and pushing will keep working; "
+                    f"the problem is only at the end, because the league is "
+                    f"collected from forks and yours would not be found. Fix "
+                    f"it now with `gh repo fork <event repo> --remote=false` "
+                    f"and `git remote set-url origin <your fork>` — nothing "
+                    f"is lost, it only changes where origin points."
+                )
 
     if problems:
         print("\n  PROBLEMS")
@@ -746,6 +759,61 @@ def _pushing_at_someone_elses_repo(remote: str) -> str | None:
         repo = fork_collect.upstream_of(url)
     except fork_collect.CollectError:
         return None
+    return _not_mine(repo)
+
+
+def _not_a_real_fork(remote: str) -> str | None:
+    """``owner/name`` if this remote is yours but is not a GitHub *fork*.
+
+    The near-miss the ownership check cannot see (v1.47). Making a fresh
+    empty repo and pointing a remote at it is what most people mean by
+    "I forked it", and locally it is indistinguishable: full history,
+    your own copy, push works, `soc push` is happy because the repo
+    genuinely is yours.
+
+    What is missing is GitHub's parent link, and only one thing needs
+    it — ``soc collect`` finds the field with ``gh api repos/X/forks``,
+    which lists forks and nothing else. So this attendee works all day,
+    publishes successfully, and is simply absent from the league with no
+    error anywhere. It has already happened once, which is the whole
+    reason this exists.
+
+    Only asked of a checkout that has an ``upstream`` remote, and that
+    condition is doing real work rather than being a cheap guard. "Not a
+    fork" is equally true of the event repo itself, so without it the
+    organiser's own clone reports the problem it exists to warn other
+    people about. Having an ``upstream`` is the one thing that says *I
+    am downstream of something* — which is precisely the attendee
+    condition, and the guide tells them to add it in the same breath as
+    cloning.
+
+    Best-effort for the same reason as its sibling: no ``gh``, no
+    answer, and a check that cannot run must not block.
+    """
+    from sea_of_colours.orchestrator_2 import fork_collect
+
+    url = _git("remote", "get-url", remote)
+    if not url:
+        return None
+    if not _git("remote", "get-url", "upstream"):
+        return None
+    try:
+        repo = fork_collect.upstream_of(url)
+    except fork_collect.CollectError:
+        return None
+    if _not_mine(repo):
+        return None  # someone else's repo is the other check's story
+    done = subprocess.run(
+        ["gh", "api", f"repos/{repo}", "--jq", ".fork"],
+        capture_output=True, text=True, check=False,
+    )
+    if done.returncode != 0:
+        return None
+    return repo if done.stdout.strip() == "false" else None
+
+
+def _not_mine(repo: str) -> str | None:
+    """``repo`` if it belongs to someone other than the logged-in user."""
     done = subprocess.run(
         ["gh", "api", "user", "--jq", ".login"],
         capture_output=True, text=True, check=False,
@@ -859,6 +927,24 @@ def _push_with_rebase(remote: str, branch: str, label: str, rel: str) -> int:
         done = subprocess.run(["git", "push", remote, branch], cwd=_REPO)
         if done.returncode == 0:
             print(f"\n  pushed {label} to {remote}/{branch}.")
+            # The closing line promises collection, so it must not be
+            # printed to someone collection will never reach.
+            unlinked = _not_a_real_fork(remote)
+            if unlinked:
+                print(
+                    f"\n  WARNING — {unlinked} is yours, but it is not a "
+                    f"FORK.\n"
+                    f"\n  Your push worked and your work is safe. But GitHub "
+                    f"has no link from\n  this repo back to the event repo, "
+                    f"and the league is collected by\n  walking the event "
+                    f"repo's forks — so as things stand your agent would\n"
+                    f"  not be found, with no error to tell anyone.\n"
+                    f"\n  It is a thirty-second fix and loses nothing:\n"
+                    f"\n    gh repo fork <event repo> --remote=false\n"
+                    f"    git remote set-url {remote} <your new fork>\n"
+                    f"    python scripts/soc.py push\n"
+                )
+                return 0
             print(f"\n  That is your fork, which is where your agent lives. "
                   f"An organiser\n  collects the forks to build the league, "
                   f"so keep pushing as you go —\n  whatever is on your fork "

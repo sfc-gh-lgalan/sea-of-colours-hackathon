@@ -54,11 +54,21 @@ Cell = Tuple[int, int]
 _OWN_ACTION_TAGS = {
     "drop", "step", "pickup", "probe", "mine_lay",
     "emp_launch", "chaff_flare", "wait",
+    # v13 — SNAP is a real per-hour action (§4.9.4) and the seat needs to see
+    # it in its own log. Without this tag in the set the frame is dropped
+    # and the reflection block reads "I ordered a SNAP that never executed"
+    # when the wire move did in fact land — a self-report that corrupts
+    # tomorrow's journal.
+    "snap",
     # failure/interdiction outcomes on your OWN units — learning signal.
     "waste", "empd", "damaged",
+    # v13 — SNAP-hit outcomes on your own units, for the same reason as
+    # ``empd``: the seat needs to see the interdiction, not the underlying
+    # move that failed to resolve.
+    "snapped",
 }
-# Tags that are PUBLIC when a rival does them (RULEBOOK §5.1 / §3.15).
-_PUBLIC_ORBITAL_TAGS = {"probe", "emp_launch", "chaff_flare"}
+# Tags that are PUBLIC when a rival does them (RULEBOOK §5.1 / §3.15 / §4.9.4).
+_PUBLIC_ORBITAL_TAGS = {"probe", "emp_launch", "chaff_flare", "snap"}
 # A rival's FIELD moves — shown only when the cell fell in your live vision.
 _ENEMY_FIELD_TAGS = {"step", "drop", "pickup", "mine_lay"}
 # Frames that are scaffolding, not a per-hour action.
@@ -716,6 +726,10 @@ def _what_you_saw(
                 "probe": "launched a probe",
                 "emp_launch": "fired an EMP salvo",
                 "chaff_flare": "flared chaff",
+                # v13 — SNAP is public per §4.9.4 (the strike itself is
+                # reported on combat_events for every seat, whether or not
+                # it found anything, because the scorch mark announces it).
+                "snap": "fired a SNAP round",
             }.get(tag, tag)
             suffix = "" if tag == "chaff_flare" else cell_s
             note = " (public)" if tag == "probe" else ""

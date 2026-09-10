@@ -4,6 +4,11 @@ Everything you need for the day, in the order you need it. If you read
 one section, read [Publishing](#7-publishing-your-agent) — it is what
 gets you into the league.
 
+> Running a team rather than writing the agent yourself? Start with the
+> [Team leader's guide](TEAM_LEADER_GUIDE.md), which sequences the whole
+> day and says what "done" looks like at each stage. Come back here for
+> how anything actually works.
+
 ---
 
 ## 0. Fork first, then clone your fork
@@ -30,6 +35,22 @@ agent and improve it for six hours against the wrong remote and only
 find out at the deadline. `soc doctor` tells you in one line, so run it
 early. If you have already done it, `soc push` prints the fix and your
 work comes across intact.
+
+**Use the Fork button — making your own empty repo is not the same
+thing.** It looks identical from your laptop: full history, your own
+copy, `push` works, `doctor` is happy that the remote is yours. What is
+missing is GitHub's link back to this repo, and exactly one thing needs
+it — the league is collected by walking this repo's *forks*, so an
+unlinked copy is never found and never scored, with no error to tell
+anyone. `soc doctor` and `soc push` both call this out (v1.47), and the
+fix is thirty seconds that loses nothing:
+
+```bash
+gh repo fork sfc-gh-lgalan/sea-of-colours-hackathon --remote=false
+git remote set-url origin https://github.com/<you>/sea-of-colours-hackathon.git
+```
+
+Renaming your fork afterwards is fine — the link survives it.
 
 ---
 

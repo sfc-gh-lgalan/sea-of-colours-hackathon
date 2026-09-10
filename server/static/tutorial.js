@@ -14,7 +14,7 @@
  * FILMS ARE OPTIONAL AT RUNTIME. Each chapter renders its prose whether
  * or not the .webm behind it exists yet, and a missing film degrades to a
  * labelled placeholder instead of a broken <video>. That is deliberate:
- * films are build output (scripts/films/make_tutorial_films.py), the reels are
+ * films are build output (backstage/films/make_tutorial_films.py), the reels are
  * source, and the two are allowed to be out of step during development.
  */
 (function () {
@@ -22,7 +22,19 @@
 
   var FILM_BASE = "/static/films/";
   var SEEN_KEY = "soc.tutorial.seen.v1";
-  var MUTED_KEY = "soc.tutorial.muted.v1";
+  //: "Do not show these again" — nothing to do with SOUND, despite the
+  //: key's name. Kept as `muted` in storage because the film harness and
+  //: the shoot script both set it to keep the modal out of shot, and
+  //: renaming it would silently un-suppress the tutorial for everyone
+  //: who has already ticked the box. The code says `suppressed` (v1.47),
+  //: because since narration arrived this file has two "mute"s and only
+  //: one of them is about audio.
+  var SUPPRESS_KEY = "soc.tutorial.muted.v1";
+  //: Narration on/off. Off by default and deliberately so: a film that
+  //: starts talking unprompted in a room of forty people is a worse
+  //: first impression than a silent one, and most browsers would refuse
+  //: to autoplay it audibly anyway.
+  var NARRATE_KEY = "soc.tutorial.narrate.v1";
 
   /* ── The reels ──────────────────────────────────────────────────────
    *
@@ -658,13 +670,23 @@
     } catch (e) { /* private window — auto-open just repeats, harmless */ }
   }
 
-  function isMuted() {
-    try { return window.localStorage.getItem(MUTED_KEY) === "1"; }
+  function isSuppressed() {
+    try { return window.localStorage.getItem(SUPPRESS_KEY) === "1"; }
     catch (e) { return false; }
   }
 
-  function setMuted(on) {
-    try { window.localStorage.setItem(MUTED_KEY, on ? "1" : "0"); }
+  function setSuppressed(on) {
+    try { window.localStorage.setItem(SUPPRESS_KEY, on ? "1" : "0"); }
+    catch (e) { /* ignore */ }
+  }
+
+  function isNarrating() {
+    try { return window.localStorage.getItem(NARRATE_KEY) === "1"; }
+    catch (e) { return false; }
+  }
+
+  function setNarrating(on) {
+    try { window.localStorage.setItem(NARRATE_KEY, on ? "1" : "0"); }
     catch (e) { /* ignore */ }
   }
 
@@ -708,6 +730,11 @@
       '    <label class="soc-tut-mute">',
       '      <input type="checkbox" data-tut-mute> don\u2019t show these again',
       '    </label>',
+      // Hidden until a film turns out to HAVE a voice track. Most do
+      // not yet, and a narration button that does nothing on nineteen
+      // chapters out of twenty-one teaches people to ignore it.
+      '    <button type="button" class="cli-btn soc-tut-narrate"',
+      '            data-tut-narrate hidden aria-pressed="false"></button>',
       '    <span class="soc-tut-nav">',
       '      <button type="button" class="cli-btn" data-tut-prev>&larr; back</button>',
       '      <button type="button" class="cli-btn" data-tut-next>next &rarr;</button>',
@@ -724,11 +751,19 @@
       if (t.closest("[data-tut-close]")) { close(); return; }
       if (t.closest("[data-tut-prev]")) { step(-1); return; }
       if (t.closest("[data-tut-next]")) { step(1); return; }
+      if (t.closest("[data-tut-narrate]")) {
+        // This click is also the user gesture that earns the right to
+        // play audio at all, so turning narration ON here always works
+        // — whereas honouring a remembered preference on load may not.
+        setNarrating(!isNarrating());
+        applyNarration(root.querySelector("video"), true);
+        return;
+      }
     });
     var mute = root.querySelector("[data-tut-mute]");
     if (mute) {
       mute.addEventListener("change", function () {
-        setMuted(Boolean(mute.checked));
+        setSuppressed(Boolean(mute.checked));
       });
     }
     document.addEventListener("keydown", function (ev) {
@@ -741,9 +776,88 @@
     return el;
   }
 
+  /* ── Narration (v1.47) ──────────────────────────────────────────────
+   *
+   * Films are shot silent and some are then narrated (see
+   * backstage/films/voice/). Three things the player does have to move
+   * together, and each has a reason that is not obvious:
+   *
+   *   muted  — every film STARTS muted, always. Browsers refuse audible
+   *            autoplay without a user gesture, and a video that is
+   *            refused does not play at all: honouring a remembered
+   *            "narration on" eagerly would trade a silent film for a
+   *            frozen one. So it starts muted and unmutes once it can.
+   *   loop   — off while narrating. A voice restarting mid-sentence
+   *            every time a 30-second clip comes round is worse than
+   *            silence; looping is only right for a silent clip someone
+   *            watches three times to catch the detail.
+   *   replay — turning narration on restarts the film. The alternative
+   *            is joining a sentence halfway, which is how you get a
+   *            player who thinks the narration is broken.
+   */
+
+  /* Does this file actually carry a voice track?
+   *
+   * Asked rather than declared because the alternative is a list of
+   * narrated films in this file, and that list would be wrong the first
+   * time someone narrates one and forgets to come back here. Every
+   * engine spells the answer differently and Chromium only answers once
+   * some audio has been decoded, which is why the caller polls. */
+  function filmHasAudio(v) {
+    if (!v) return false;
+    if (typeof v.mozHasAudio === "boolean") return v.mozHasAudio;
+    if (v.audioTracks && typeof v.audioTracks.length === "number") {
+      return v.audioTracks.length > 0;
+    }
+    if (typeof v.webkitAudioDecodedByteCount === "number") {
+      return v.webkitAudioDecodedByteCount > 0;
+    }
+    return false;
+  }
+
+  function paintNarrateBtn(has, on, blocked) {
+    var root = el;
+    if (!root) return;
+    var b = root.querySelector("[data-tut-narrate]");
+    if (!b) return;
+    b.hidden = !has;
+    b.textContent = blocked
+      ? "click to hear narration"
+      : (on ? "narration: on" : "narration: off");
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.classList.toggle("is-on", Boolean(on) && !blocked);
+  }
+
+  function applyNarration(v, restart) {
+    if (!v || !v.parentNode) return;
+    var has = filmHasAudio(v);
+    var want = has && isNarrating();
+    v.loop = !want;
+    if (!want) {
+      v.muted = true;
+      paintNarrateBtn(has, false, false);
+      return;
+    }
+    v.muted = false;
+    if (restart) { try { v.currentTime = 0; } catch (e) { /* ignore */ } }
+    var p = v.play();
+    paintNarrateBtn(true, true, false);
+    // A rejected play() is the autoplay policy, not a broken file. Fall
+    // back to the silent film and say what would fix it, rather than
+    // leaving a stopped video and no explanation.
+    if (p && typeof p.catch === "function") {
+      p.catch(function () {
+        v.muted = true;
+        v.loop = true;
+        try { v.play(); } catch (e) { /* ignore */ }
+        paintNarrateBtn(true, false, true);
+      });
+    }
+  }
+
   /* A film, or an honest placeholder. `preload="auto"` and `loop` are
-   * both wanted: these are 10-second silent clips and a first-timer will
-   * watch one three times. */
+   * both wanted: these are short clips and a first-timer will watch one
+   * three times. */
   function stageFor(chapter) {
     var stage = document.createElement("div");
     if (!chapter.film) {
@@ -767,6 +881,21 @@
         "film not generated yet \u2014 the text below says the same thing";
       if (v.parentNode) v.parentNode.replaceChild(miss, v);
     });
+    // Chromium reports an audio track only once it has decoded some, so
+    // one check on loadeddata finds nothing. Poll briefly, then give up:
+    // a film with no voice must not leave a spinner or a dead button.
+    var tries = 0;
+    var poll = window.setInterval(function () {
+      tries += 1;
+      if (!v.parentNode) { window.clearInterval(poll); return; }
+      if (filmHasAudio(v)) {
+        window.clearInterval(poll);
+        applyNarration(v, isNarrating());
+      } else if (tries > 12) {
+        window.clearInterval(poll);
+        paintNarrateBtn(false, false, false);
+      }
+    }, 250);
     return v;
   }
 
@@ -800,6 +929,10 @@
 
     var stage = root.querySelector("[data-tut-stage]");
     stage.textContent = "";
+    // Hide the control before the new film is in: whether it has a
+    // voice is a fact about THIS chapter, and carrying the last one's
+    // answer over would offer narration on a silent film.
+    paintNarrateBtn(false, false, false);
     stage.appendChild(stageFor(ch));
 
     var prev = root.querySelector("[data-tut-prev]");
@@ -807,7 +940,7 @@
     prev.hidden = i === 0;
     next.hidden = i >= n - 1;
     var mute = root.querySelector("[data-tut-mute]");
-    if (mute) mute.checked = isMuted();
+    if (mute) mute.checked = isSuppressed();
   }
 
   function step(d) {
@@ -907,7 +1040,7 @@
     // Auto-open once per turn. The player asked for the modal to be up
     // by default at the start of a turn; having it reappear on every
     // four-second poll would be a different and much worse feature.
-    var wantsOpen = !isMuted() && seenSet().indexOf(scoped) === -1;
+    var wantsOpen = !isSuppressed() && seenSet().indexOf(scoped) === -1;
 
     if (changed) {
       cancelPendingOpen();

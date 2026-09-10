@@ -36,10 +36,39 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, get_args
+
+
+def _weapon_verbs() -> tuple[str, ...]:
+    """Wire verbs the engine accepts for ordnance, asked of the engine.
+
+    v1.45 — this was a hand-written literal and it silently missed
+    ``snap_launch`` for the whole of SNAP's life, so a fork whose
+    doctrine was SNAP-only was told it had not built rungs 2 and 4. SNAP
+    is the cheapest weapon at 100 blue and so the likeliest first one a
+    team reaches for, which made it the worst possible verb to miss —
+    and the failure was invisible, because the ladder answered
+    confidently either way.
+
+    Every ordnance tag is ``<kind>_<verb>`` for a kind the economy
+    prices, which is enough to derive the list from the two things that
+    already have to be right. A new weapon is picked up here for free.
+    """
+    from sea_of_colours.game.policy import MoveTag
+    from sea_of_colours.game.weapons import BLUE_COST_BY_KIND
+
+    kinds = set(BLUE_COST_BY_KIND)
+    return tuple(
+        tag for tag in get_args(MoveTag) if tag.split("_")[0] in kinds
+    )
+
 
 #: Wire verbs the engine accepts for ordnance (``game/policy.py``).
-WEAPON_VERBS = ("emp_launch", "chaff_flare")
+WEAPON_VERBS = _weapon_verbs()
+
+#: The weapon nouns those verbs are built from — ``emp``, ``chaff``,
+#: ``snap`` — used to spot offensive doctrine below.
+WEAPON_NOUNS = tuple(sorted({v.split("_")[0] for v in WEAPON_VERBS}))
 
 #: Files whose weapon-awareness does NOT count for rung 1.
 #:
@@ -63,7 +92,7 @@ _BUYING_FILES = ("orbit.py", "orbit_policy.py", "card.py")
 #: to blind it, which is probe denial and nothing to do with weapons.
 _OFFENSIVE_RE = re.compile(
     r"\b(fire|launch|flare|spend|salvo)\w*\s+"
-    r"(?:your|an|a|the|one)?\s*(emp|chaff)\b",
+    r"(?:your|an|a|the|one)?\s*(" + "|".join(WEAPON_NOUNS) + r")\b",
     re.IGNORECASE,
 )
 
@@ -136,9 +165,10 @@ def _rung_1_knows_its_rack(src: Dict[Path, str]) -> Rung:
         ("only the buying code reads weapon_stock — the night phase is "
          "never told what is in the rack"
          if buys else "nothing in the fork reads weapon_stock"),
-        ("carry the seat's own emp/chaff counts into the night view "
-         "(world_view.py) and say them in the prompt (prompt.py). "
-         "An agent cannot choose a weapon it does not know it owns."),
+        (f"carry the seat's own {'/'.join(WEAPON_NOUNS)} counts into the "
+         "night view (world_view.py) and say them in the prompt "
+         "(prompt.py). An agent cannot choose a weapon it does not know "
+         "it owns."),
     )
 
 
@@ -247,7 +277,7 @@ def _rung_4_doctrine_says_when(src: Dict[Path, str]) -> Rung:
         )
     return Rung(
         4, "doctrine says when, and at what tempo", False,
-        "doctrine covers surviving EMP and chaff, never using them",
+        f"doctrine covers surviving {', '.join(WEAPON_NOUNS)}, never using them",
         ("write the offensive case: when denying a rival's eye beats "
          "harvesting, and which hour to fire. An option nobody is told "
          "to reach for stays unreached."),

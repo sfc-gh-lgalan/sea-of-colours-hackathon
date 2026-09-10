@@ -357,6 +357,13 @@ class SeamWave:
     emp_launch_at: Optional[List[Tuple[int, int]]] = None
     emp_hole: Optional[Tuple[int, int]] = None
     emp_only: bool = False
+    # v13 — SNAP round in a wave. ``snap_at`` is the single cell; ``snap_only``
+    # means the wave fires the SNAP and commits no harvester (case C's H1
+    # landing-block in SNAP_BLOCK). If ``snap_only`` is False and ``snap_at``
+    # is set, the wave fires the SNAP AND drops a harvester in the same
+    # wave — currently unused, kept for symmetry with the emp variants.
+    snap_at: Optional[Tuple[int, int]] = None
+    snap_only: bool = False
     # A defer key — when set, the wave's drop+comb is held until the salvo's
     # cloud clears. Used by case A / case B / case C to spool the follow-up
     # harvester behind the previous wave's EMP without hand-sequencing hours.
@@ -392,6 +399,11 @@ class SeamWave:
                 if self.emp_hole is not None else None
             ),
             "emp_only": bool(self.emp_only),
+            "snap_at": (
+                [int(self.snap_at[0]), int(self.snap_at[1])]
+                if self.snap_at is not None else None
+            ),
+            "snap_only": bool(self.snap_only),
             "defer_until_clear": bool(self.defer_until_clear),
         }
 
@@ -1732,20 +1744,37 @@ def _classify_redsign_case(
     # ``_enemy_probe_cells`` returns a list of DICTS ({"at": (x,y), ...}),
     # not tuples — passing that straight into set() raises TypeError on the
     # unhashable dict. Normalise to (x, y) tuples for membership testing.
-    enemy_probes: Set[Tuple[int, int]] = set()
+    enemy_probe_cells: Set[Tuple[int, int]] = set()
     for row in (_enemy_probe_cells(agent_view) or []):
         at = row.get("at") if isinstance(row, Mapping) else row
         if isinstance(at, (list, tuple)) and len(at) >= 2:
             try:
-                enemy_probes.add((int(at[0]), int(at[1])))
+                enemy_probe_cells.add((int(at[0]), int(at[1])))
             except (TypeError, ValueError):
                 continue
     opps = _count_opponents(agent_view)
 
     if mine is True:
         return "mine_alone" if opps <= 1 else "mine_contested"
-    if core is not None and core[0] in my_probes and core[0] in enemy_probes:
-        return "shared_vision"
+    # ``shared_vision`` = both a friendly AND an enemy probe can SEE the pure.
+    # A cell is "seen" by a probe when it lies inside the probe's Euclidean
+    # r=4 disk. The old check compared the pure cell against enemy_probe
+    # positions directly (looking for an enemy probe AT the pure), which
+    # was almost never true — probes sit adjacent to a pure, not on it —
+    # so shared_vision fired only in degenerate cases. Compute coverage
+    # properly here so RACE_CRASH_EMP and SNAP_BLOCK actually surface on
+    # the boards they exist for.
+    if core is not None:
+        pure = core[0]
+        reach = _PROBE_RADIUS
+        r_sq = reach * reach
+        rival_can_see_pure = any(
+            (p[0] - pure[0]) ** 2 + (p[1] - pure[1]) ** 2 <= r_sq
+            for p in enemy_probe_cells
+        )
+        we_can_see_pure = pure in my_probes
+        if rival_can_see_pure and we_can_see_pure:
+            return "shared_vision"
     if core is None:
         return "rival_blind"
     return "rival_sighted"
@@ -1865,6 +1894,97 @@ def _pattern_smash_then_lock(
             "yours next night, and the rival lost a night on it."
         ),
         waves=waves,
+    )
+
+
+def _pattern_snap_block(
+    agent_view: Mapping[str, Any],
+    beacon: Tuple[int, int],
+    hint: Mapping[str, Any],
+    threat: Mapping[str, Any],
+) -> Optional[SeamPattern]:
+    """CASE C (SNAP variant) — shared vision on the pure, but we hold a SNAP.
+
+    H1: SNAP the pure cell — hot for 1h, rival's H1 landing on it is REFUSED
+    (§4.9.4). This is the SNAP's unique property: it resolves ABOVE the vision
+    snapshot, so the drop is denied THIS HOUR, not next.
+    H2: our own SMASH_GRAB drops on the (now cool) pure cell and auto-harvests.
+    H3+: pickup and lift.
+
+    Cheaper than RACE_CRASH_EMP (100 blue vs 200), works with ONE harvester
+    (RACE_CRASH_EMP requires two), doesn't rely on both sides mutually
+    crashing — the rival's landing is prevented outright.
+    """
+    rack = scorch.stock(agent_view)
+    if rack.get("snap", 0) <= 0:
+        return None
+    if threat.get("chaff_in_play"):
+        # Chaff cancels our SNAP the same way it cancels EMP (§4.9.4).
+        # The play cannot fire; do not offer it.
+        return None
+    core = _known_core(agent_view, beacon)
+    if core is None:
+        return None
+    pure_cell = core[0]
+    if not _drop_legal_now(agent_view, pure_cell):
+        return None
+
+    return SeamPattern(
+        pattern_id="SNAP_BLOCK",
+        kind="SNAP_BLOCK",
+        beacon=beacon,
+        mine=None,  # shared vision — ownership not the point
+        title=(
+            f"SNAP block + smash (case C, SNAP variant) — H1 SNAP "
+            f"@{_fmt_cell_short(pure_cell)} refuses rival landing; "
+            "H2 our SMASH_GRAB drops on the (now cool) pure"
+        ),
+        when=(
+            "You and a rival both see the pure. SNAP the pure at H1 (100 "
+            "blue, one hour hot); the rival's H1 landing is refused because "
+            "SNAP resolves ABOVE the vision snapshot. At H2 the cell is "
+            "cool again — YOUR harvester drops on it, auto-harvests the "
+            "pure. Cheaper than RACE_CRASH_EMP and works with one harvester."
+        ),
+        rationale=(
+            "The property this play buys is §4.9.4: a SNAP resolves BEFORE "
+            "the hour-start vision snapshot, so a rival's H1 drop into the "
+            "SNAPped cell finds no live coverage and is refused. An EMP "
+            "fired on the same cell only denies the drop from NEXT hour, "
+            "so a rival racing H1 lands anyway. On a shared-vision beacon "
+            "you MUST assume the rival is racing; this is the only weapon "
+            "that stops them in the same hour they're arriving. Compared "
+            "to RACE_CRASH_EMP: half the blue (100 vs 200), one harvester "
+            "instead of two, no reliance on a mutual crash. Compared to "
+            "SMASH_GRAB alone: adds the H1 SNAP that guarantees the pure "
+            "survives the rival's landing attempt. Skip if chaff is in "
+            "play — chaff cancels a SNAP the same way it cancels an EMP."
+        ),
+        waves=[
+            SeamWave(
+                wave=1,
+                earliest_hour=_H_SMASH,
+                drop_at=pure_cell,     # sentinel; snap_only skips the drop
+                snap_at=pure_cell,
+                snap_only=True,
+                unit_ordinal=-1,
+                note=(
+                    f"H1 SNAP @ {_fmt_cell_short(pure_cell)} — cell hot for "
+                    "1h. Any rival landing this cell THIS HOUR is refused."
+                ),
+            ),
+            SeamWave(
+                wave=2,
+                earliest_hour=_H_SMASH + 1,
+                drop_at=pure_cell,
+                unit_ordinal=0,
+                pickup_after=True,
+                note=(
+                    "H2 drop on the pure — cell is cool, auto-harvest the "
+                    "jackpot, lift."
+                ),
+            ),
+        ],
     )
 
 
@@ -3256,6 +3376,15 @@ def build_seam_menu(
                 if p_b is not None:
                     emp_extras.append(p_b)
             elif case == "shared_vision" or case == "mine_contested":
+                # SNAP_BLOCK sits alongside RACE_CRASH_EMP for case C — same
+                # trigger (both seats see the pure) but a different weapon
+                # shape. The thinker weighs them; if the rack has SNAP but
+                # no EMP, only SNAP_BLOCK appears (and vice versa).
+                p_s = _pattern_snap_block(
+                    agent_view, beacon, hint or {}, threat,
+                )
+                if p_s is not None:
+                    emp_extras.append(p_s)
                 p_c = _pattern_race_crash_emp(
                     agent_view, beacon, hint or {}, threat,
                     harvesters_alive=n_alive,

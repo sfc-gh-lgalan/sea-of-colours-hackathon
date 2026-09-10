@@ -1,0 +1,20 @@
+# backstage/ — NOT part of the hackathon install.
+#
+# Nothing in here is needed to play the game, run the test suite, fork an
+# agent, run a season or score a league. The attendee path is the five
+# packages in the repo's own requirements.txt and nothing else; keep it
+# that way. This file exists so the browser and media kit can be heavy
+# without that cost landing on forty laptops at the start of the day.
+#
+#   pip install -r backstage/requirements.txt
+#   playwright install chromium
+#
+# Also wants `ffmpeg` on PATH (brew install ffmpeg) for the film rig —
+# it is a binary, not a Python package, so it cannot live here.
+playwright>=1.44
+
+# Neural text-to-speech for the film voiceovers (backstage/films/voice/).
+# Offline and local on purpose: a voice line must be reproducible years
+# from now without an API key, a bill or a vendor still being in
+# business. Voice models download separately — see films/voice/README.md.
+piper-tts>=1.8

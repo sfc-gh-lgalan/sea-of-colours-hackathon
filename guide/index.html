@@ -491,6 +491,8 @@
       <span class="dim">· install guide · v0.1</span>
       <span class="prompt-caret">_</span>
       <span class="gd-spacer"></span>
+      <a class="gd-manual-link" href="./leader.html"
+         title="Running a team? The day in order, with a checkpoint per stage">[ TEAM LEADER ]</a>
       <a class="gd-manual-link" href="../manual/index.html">[ MANUAL ]</a>
     </header>
     <div class="gd-progress" id="gd-progress"></div>
@@ -824,12 +826,13 @@
           <span class="mark">&#10003;</span>
           <span>
             <b>Checkpoint.</b> You should see the title screen with
-            <code>Quick game</code>, <code>Play</code>,
-            <code>Multiplayer</code> and <code>Replay</code>. Hit
-            <code>Quick game</code> and you are on the board against
-            <code>RED_HARVEST_LITE</code> immediately &mdash; skip to
-            <a href="#night">04</a> if you'd rather start playing than read
-            about the launcher.
+            <code>Tutorial</code>, <code>Play</code>,
+            <code>Multiplayer</code>, <code>Replay</code> and
+            <code>Turn Lab</code>. Hit <code>Tutorial</code> and pick
+            <code>Quick game</code> &mdash; you are on the board against
+            <code>RED_HARVEST_LITE</code> immediately, with no films.
+            Skip to <a href="#night">04</a> if you'd rather start playing
+            than read about the launcher.
           </span>
         </div>
       </section>
@@ -841,8 +844,8 @@
         <p class="gd-lede">
           <code>Quick game</code> already did this for you &mdash; it spawns
           the exact setup below. Read on when you want a different map, more
-          seats, or V12 in the other chair; hit <code>Play</code> instead of
-          <code>Quick game</code> to get the launcher.
+          seats, or V12 in the other chair; hit <code>Play</code> on the
+          title screen to get the launcher.
         </p>
         <p>
           The launcher asks four blocks of questions, and the defaults are the
@@ -1352,6 +1355,18 @@ PY</pre>
               it starts the first provider, waits for the address it printed
               to become resolvable here, and falls through if it never does.
               <code>/api/tunnel/status</code> says which one won.
+            </p>
+            <p>
+              <b class="tag">If the links stop working mid-game</b>
+              A tunnel can drop. The server notices and restarts it, but a
+              restart means a <em>new address</em>, so the QRs you already
+              handed out are dead. Look at the terminal running
+              <code>run_web.py</code>: it prints the new URL with
+              <code>NEW ADDRESS</code> beside it. That's the only place it
+              can tell you &mdash; everyone's browser, yours included, is
+              sitting on an address that no longer exists. Re-share and
+              carry on; the game itself is untouched, because it lives on
+              the server and not in the link.
             </p>
             <p class="dim">
               That wait is deliberate, and it's the one thing to know if you

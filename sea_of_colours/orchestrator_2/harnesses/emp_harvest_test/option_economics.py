@@ -284,12 +284,30 @@ def walk_cells(payload: Mapping[str, Any]) -> List[Cell]:
                 continue
             # v13 — emp_only waves fire a salvo, no harvester lands, so they
             # bank nothing and must not be walked here (mirrors deny_only).
-            if w.get("emp_only"):
+            # snap_only waves are the same shape for the SNAP round.
+            if w.get("emp_only") or w.get("snap_only"):
                 continue
             _push(_as_cell(w.get("drop_at")))
             for c in (w.get("comb_path") or []):
                 _push(_as_cell(c))
         return out
+
+    # v13 — BLIND_SCORCH (shape=="occupy"): the harvester lands on ``hole``
+    # and combs the cells under ``comb`` when the cloud lifts. Prior to this
+    # branch, walk_cells returned empty for BLIND_SCORCH and the option's
+    # yield line rendered "red ~+0", which the LLM read as "worth nothing"
+    # — the seed-4242/p3-lab-d6 failure mode (the doctrine warning against
+    # the +0 anchor could not override the anchor itself). Surfacing the
+    # walk here lets ``blind_estimate`` price the halo, and ``_fmt_yield``
+    # then renders a real "expected red over the whole route ~+X" number
+    # in the option line.
+    if str(payload.get("shape") or "") == "occupy":
+        hole = _as_cell(payload.get("hole"))
+        if hole is not None:
+            _push(hole)
+            for c in (payload.get("comb") or []):
+                _push(_as_cell(c))
+            return out
 
     # Chain / grab: ``cells`` already includes the drop as its first entry.
     cells = payload.get("cells")
