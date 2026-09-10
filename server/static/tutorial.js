@@ -756,7 +756,7 @@
     v.src = FILM_BASE + chapter.film;
     v.autoplay = true;
     v.loop = true;
-    v.muted = true;
+    v.muted = false;
     v.playsInline = true;
     v.preload = "auto";
     v.setAttribute("aria-label", chapter.heading || "tutorial film");
