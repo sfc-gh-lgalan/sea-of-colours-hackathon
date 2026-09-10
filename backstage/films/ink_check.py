@@ -13,7 +13,7 @@ rate and reports, per frame, how many pixels carry a weapon's ink.
 Comparison is the point — run it against a film everyone agrees reads
 well and you get a number to judge against::
 
-    python backstage/films/ink_check.py server/static/films/adv_emp.webm  emp
+    python backstage/films/ink_check.py server/static/films/20_adv_emp.webm  emp
     python backstage/films/ink_check.py server/static/films/adv_snap.webm snap
 
 At the time of writing the EMP's cloud peaks around 12,000 px. The

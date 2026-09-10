@@ -72,7 +72,7 @@ at all. `ink_check.py` counts a weapon's colour frame by frame across a whole
 film, so "the missile is subtle" and "there is no missile" stop looking alike:
 
 ```bash
-python backstage/films/ink_check.py server/static/films/adv_emp.webm  emp
+python backstage/films/ink_check.py server/static/films/20_adv_emp.webm  emp
 python backstage/films/ink_check.py server/static/films/adv_snap.webm snap
 ```
 
@@ -128,7 +128,7 @@ Advanced's fourth night caught three films this way; see issue 44.
 Checking it is quick, and worth doing after any reel shuffle:
 
 ```bash
-ffmpeg -ss 7 -i server/static/films/adv_emp.webm -frames:v 1 \
+ffmpeg -ss 7 -i server/static/films/20_adv_emp.webm -frames:v 1 \
   -vf "crop=200:26:436:8,scale=800:-1:flags=neighbor" /tmp/hdr.png
 ```
 

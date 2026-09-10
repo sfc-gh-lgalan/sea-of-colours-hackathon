@@ -30,10 +30,12 @@
   //: because since narration arrived this file has two "mute"s and only
   //: one of them is about audio.
   var SUPPRESS_KEY = "soc.tutorial.muted.v1";
-  //: Narration on/off. Off by default and deliberately so: a film that
-  //: starts talking unprompted in a room of forty people is a worse
-  //: first impression than a silent one, and most browsers would refuse
-  //: to autoplay it audibly anyway.
+  //: Narration on/off, remembered per browser. ON when unset (v1.48):
+  //: every film is now voiced, and the reason it defaulted off was that
+  //: none of them were — a toggle offering silence over silence is just
+  //: a dead button. The room-of-forty objection is real, so the toggle
+  //: stays, an explicit "off" is remembered, and nothing here can make
+  //: noise before the click that opens the tutorial.
   var NARRATE_KEY = "soc.tutorial.narrate.v1";
 
   /* ── The reels ──────────────────────────────────────────────────────
@@ -681,8 +683,13 @@
   }
 
   function isNarrating() {
-    try { return window.localStorage.getItem(NARRATE_KEY) === "1"; }
-    catch (e) { return false; }
+    // Unset means on. Only a deliberate toggle-off is remembered, so a
+    // first-timer hears the voice and anyone who turned it off keeps it
+    // off across chapters and sessions.
+    try {
+      var pref = window.localStorage.getItem(NARRATE_KEY);
+      return pref === null ? true : pref === "1";
+    } catch (e) { return false; }
   }
 
   function setNarrating(on) {
@@ -778,9 +785,11 @@
 
   /* ── Narration (v1.47) ──────────────────────────────────────────────
    *
-   * Films are shot silent and some are then narrated (see
-   * backstage/films/voice/). Three things the player does have to move
-   * together, and each has a reason that is not obvious:
+   * Films are shot silent and then narrated (see backstage/films/voice/).
+   * All twenty-one carry a voice track as of v1.48, but the player still
+   * asks each file rather than assuming: the next film someone adds will
+   * be silent until it is voiced, and it must not show a dead button.
+   * Three things have to move together, each for a non-obvious reason:
    *
    *   muted  — every film STARTS muted, always. Browsers refuse audible
    *            autoplay without a user gesture, and a video that is
@@ -851,8 +860,47 @@
         v.loop = true;
         try { v.play(); } catch (e) { /* ignore */ }
         paintNarrateBtn(true, false, true);
+        armNarrationRetry();
       });
     }
+  }
+
+  /* The gesture that earns audio does not have to be aimed at us.
+   *
+   * The modal auto-opens, so on a fresh navigation there is usually no
+   * user activation yet and the play() above is refused through no
+   * fault of the film. Waiting for a click on the narration button
+   * specifically is a bad trade: the button is telling the truth, but
+   * most people read a small button as decoration, and the cost of
+   * being ignored is twenty-one narrated films watched in silence. Any
+   * gesture anywhere in the document lifts the policy, so take the
+   * first one going and retry.
+   *
+   * The narrate button is the one thing excluded, because its own
+   * handler flips the preference a beat later — unmuting from here
+   * first would turn a "give me sound" click into "turn sound off". */
+  var narrationRetryArmed = false;
+
+  function onFirstGesture(ev) {
+    var t = ev && ev.target;
+    if (t instanceof Element && t.closest("[data-tut-narrate]")) return;
+    disarmNarrationRetry();
+    if (!isNarrating()) return;
+    var v = el && el.querySelector("video");
+    if (v && v.muted) applyNarration(v, true);
+  }
+
+  function armNarrationRetry() {
+    if (narrationRetryArmed) return;
+    narrationRetryArmed = true;
+    document.addEventListener("pointerdown", onFirstGesture, true);
+    document.addEventListener("keydown", onFirstGesture, true);
+  }
+
+  function disarmNarrationRetry() {
+    narrationRetryArmed = false;
+    document.removeEventListener("pointerdown", onFirstGesture, true);
+    document.removeEventListener("keydown", onFirstGesture, true);
   }
 
   /* A film, or an honest placeholder. `preload="auto"` and `loop` are
@@ -870,7 +918,13 @@
     v.src = FILM_BASE + chapter.film;
     v.autoplay = true;
     v.loop = true;
-    v.muted = false;
+    // Muted at birth, always — see the narration note above. Unmuting
+    // here instead looks like it works and does not: the poll below
+    // hands the element to applyNarration a moment later, which owns
+    // both flags, so an eager unmute buys a second of voice and then
+    // gets muted again mid-sentence on any browser that allowed it, and
+    // a film that never starts on any browser that did not.
+    v.muted = true;
     v.playsInline = true;
     v.preload = "auto";
     v.setAttribute("aria-label", chapter.heading || "tutorial film");
