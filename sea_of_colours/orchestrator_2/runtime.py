@@ -39,14 +39,48 @@ from sea_of_colours.snowpark import engine as soc_engine
 from sea_of_colours.snowpark import snapshot as soc_snapshot
 
 
-def _seat_has_pending(store, session_id: str, player: str) -> bool:
-    """Did this seat lock a policy for the current day?"""
+def _submission_landed(
+    store, session_id: str, player: str, *, phase: str, day: int,
+) -> bool:
+    """Did this seat's stash for ``phase``/``day`` actually reach the engine?
+
+    Asked whenever a binding submitted but did not say so. On the orbit
+    path that is *always*: the orbit envelope has never carried a
+    ``submitted_policy`` key, so every orbit turn is reconciled here.
+
+    Reading ``pending`` alone is the obvious version, and it is wrong
+    for the last seat to submit — wrong every time (v1.47). The map is
+    phase-aware: orbit stashes during ORBIT, policies during PLANNING.
+    The last seat's submit is the one that *completes* the phase, so by
+    the time we look the engine has already advanced, cleared the
+    stashes and begun answering a different question — and the one seat
+    we know submitted is the one seat that reads as missing.
+
+    It hid for so long because it needs a harness seat playing *last*,
+    and until three forks played each other that seldom happened: a
+    heuristic seat returns before this code, so the usual fork-vs-
+    RED_HARVEST pairing shows nothing with the heuristic in p2 and a
+    spurious ``[fallback]`` with it in p1. Nothing failed loudly either
+    — the duplicate submit is refused as wrong-phase, so the mislabelled
+    turn scores identically to a clean one.
+
+    So take movement as proof. A phase only leaves ORBIT, and a day only
+    advances, once every seat is in; if either moved while we were
+    dispatching, this seat's submission is precisely what moved it.
+    """
     try:
         status = soc_engine.get_session_status(store, session_id) or {}
-        pending = status.get("pending") or {}
-        return bool(pending.get(player, False))
     except Exception:  # pragma: no cover - defensive
         return False
+    want = str(phase or "").strip().lower()
+    if want and str(status.get("phase") or "").strip().lower() != want:
+        return True
+    try:
+        if day and int(status.get("day") or day) != int(day):
+            return True
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        pass
+    return bool((status.get("pending") or {}).get(player, False))
 
 
 def _heuristic_fallback(
@@ -113,13 +147,15 @@ def run_agent_turn(
     view = soc_engine.get_view(store, session_id, player)
     agent_view = view.get("agent_view") or {}
     day = int(view.get("day", agent_view.get("hud", {}).get("day", 0)))
+    # The phase we are taking a turn *for*. Captured before dispatch
+    # because reconciliation compares against it: the engine may have
+    # moved on by the time we ask, and that movement is the answer.
+    view_phase = str(view.get("phase") or "")
 
     # Freeze the board the instant before a seat plans, when SOC_SNAPSHOT_PREFIX
     # is set. This is the only moment the pre-decision state exists — the
     # session blob is overwritten as the night resolves.
-    soc_snapshot.maybe_take(
-        store, session_id, day, player, str(view.get("phase") or "")
-    )
+    soc_snapshot.maybe_take(store, session_id, day, player, view_phase)
 
     # ── Orbit phase: binding-aware dispatch. ──────────────────────────
     #
@@ -130,7 +166,7 @@ def run_agent_turn(
     # and shipping. The heuristic remains the fallback path for seats
     # without a harness binding and as the safety net when a harness
     # binding fails to submit.
-    if str(view.get("phase") or "") == "orbit":
+    if view_phase == "orbit":
         binding = resolve_binding(
             store, session_id, player,
             runtime_override=runtime_override, agent_label=agent_label,
@@ -176,7 +212,9 @@ def run_agent_turn(
         landed = dispatch.submitted_policy
         if not landed:
             time.sleep(0.2)
-            landed = _seat_has_pending(store, session_id, player)
+            landed = _submission_landed(
+                store, session_id, player, phase="orbit", day=day,
+            )
         if not landed:
             # Harness missed — fall back to heuristic so orbit still resolves.
             orbit_actions, rationale = plan_orbit_actions(agent_view)
@@ -254,10 +292,14 @@ def run_agent_turn(
     if not landed and binding.kind != "heuristic":
         # Warehouse-commit visibility race: re-poll after a brief beat.
         time.sleep(0.2)
-        landed = _seat_has_pending(store, session_id, player)
+        landed = _submission_landed(
+            store, session_id, player, phase=view_phase, day=day,
+        )
         if not landed:
             time.sleep(0.8)
-            landed = _seat_has_pending(store, session_id, player)
+            landed = _submission_landed(
+                store, session_id, player, phase=view_phase, day=day,
+            )
 
     if not landed and binding.kind != "heuristic":
         # ── E1 (seed-69 day-1 double night-resolution) — RETRY IN PLACE.
@@ -288,7 +330,9 @@ def run_agent_turn(
             landed = True
         else:
             time.sleep(0.2)
-            landed = _seat_has_pending(store, session_id, player)
+            landed = _submission_landed(
+                store, session_id, player, phase=view_phase, day=day,
+            )
             if landed:
                 dispatch = retry
 
