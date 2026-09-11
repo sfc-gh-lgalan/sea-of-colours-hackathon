@@ -90,6 +90,43 @@ def test_a_trail_cell_is_priced_as_green_not_as_the_red_the_echo_remembers():
     )
 
 
+def test_our_own_stripped_ground_is_priced_as_green_even_through_fog():
+    """v1.48 — the mirror of the test above, for the wake WE left.
+
+    A rival's trail survives fog because it arrives as intel. Ours did not:
+    the view only publishes green it can currently SEE, so a seam we combed
+    two nights ago went dark and fell out of the index entirely, scoring as
+    "unknown" — which the yield line renders as free. Observed on wpn_s3 day
+    6, where a chain crossed three of its own stripped cells and advertised
+    "green 0" one line above a HAZARD warning naming all three. Priced
+    honestly the walk is -38, not +262, and the agent declines it.
+    """
+    view = _sweep_view()
+    # Nothing in `live` and nothing in the intel block — only the harness's
+    # own monotonic memory of ground it stripped itself.
+    view["stripped_memory"] = [[16, 6], [15, 6]]
+    yb = oe.yield_breakdown([(16, 6), (15, 6), (16, 7)], view)
+    assert yb["green_cells"] == 2
+    assert yb["green_penalty"] == -200
+    assert yb["unknown_cells"] == 0, (
+        "a cell we remember stripping is not unknown ground"
+    )
+    assert yb["red_tiers"].get("vein") is None, (
+        "the stale echo must not resurrect (16,6) as red we can still take"
+    )
+
+
+def test_a_live_reading_beats_our_stale_memory_of_stripping_it():
+    """`setdefault`, not overwrite. Green is monotonic, but the memory is not
+    evidence about a cell a probe is lighting right now — if the view can see
+    RED there, the view wins and we do not veto a real mass on a stale note."""
+    view = _sweep_view()
+    view["stripped_memory"] = [[16, 7]]  # but (16,7) is RED in `live`
+    yb = oe.yield_breakdown([(16, 7)], view)
+    assert yb["green_cells"] == 0
+    assert yb["red_pts"] > 0
+
+
 def test_the_yield_says_how_much_of_the_red_is_only_an_echo():
     """An echo still counts — it is real evidence — but a total that blends it
     with live readings reads more confident than the board warrants."""
@@ -158,13 +195,60 @@ def test_a_pure_two_options_both_walk_is_flagged_on_both_of_them():
     )[(31, 18)] == ["GRAB1"]
 
 
-def test_only_mass_and_pure_overlaps_are_worth_the_ink():
-    """A shared trace changes no decision; flagging it would bury the pure."""
+def test_one_shared_trace_is_still_not_worth_the_ink():
+    """The original instinct survives for the case it was right about: one
+    cheap cell changes no decision, and flagging it would bury the pure."""
     claims = oe.overlap_claims(
-        {"A": [(33, 17), (32, 18)], "B": [(33, 17), (32, 18)]},
+        {"A": [(33, 17)], "B": [(33, 17)]},   # trace 40 -> 30 + 100 = 130
         _two_seam_view(),
     )
-    assert claims == {}, "trace/vein overlaps must stay silent"
+    assert claims == {}, "a single trace share must stay silent"
+
+
+def test_enough_cheap_cells_add_up_to_worth_the_ink():
+    """OBS-54. Cheap PER CELL is not cheap in aggregate, because each shared
+    cell costs the double count AND the -100 it becomes AND the hour."""
+    claims = oe.overlap_claims(
+        {"A": [(33, 17), (32, 18)], "B": [(33, 17), (32, 18)]},
+        _two_seam_view(),                      # 30+100 plus 60+100 = 290
+    )
+    assert set(claims) == {"A", "B"}, (
+        "two shared cells put 290 points at stake — that earns a line"
+    )
+
+
+def test_a_shared_mass_always_warns_however_lonely():
+    """The pre-v1.48 guarantee, pinned: this change may only ADD warnings."""
+    claims = oe.overlap_claims(
+        {"A": [(32, 17)], "B": [(32, 17)]},   # mass 200, on its own
+        _two_seam_view(),
+    )
+    assert set(claims) == {"A", "B"}
+
+
+def test_two_chains_running_one_seam_from_opposite_ends_are_flagged():
+    """The duel_s4001 day-4 night, in miniature. CH1 walks the seam one way
+    and CH2 walks it back; they share three VEIN cells, which the old
+    mass/pure filter waved through. The model then added 698 and 587, and the
+    second harvester spent three hours re-walking its own fresh green."""
+    view = {
+        "day": 4,
+        "world": {"width": 40, "height": 40, "live": [
+            {"x": x, "y": y, "tile": "RED", "purity": 131}
+            for x, y in [(11, 17), (10, 17), (10, 18), (10, 19),
+                         (11, 19), (12, 19), (9, 18), (9, 17), (8, 17)]
+        ]},
+    }
+    claims = oe.overlap_claims(
+        {"CH1": [(11, 17), (10, 17), (10, 18), (10, 19), (11, 19), (12, 19)],
+         "CH2": [(11, 19), (10, 19), (10, 18), (9, 18), (9, 17), (8, 17)]},
+        view,
+    )
+    assert set(claims) == {"CH1", "CH2"}, "both ends of the seam must be told"
+    for oid in ("CH1", "CH2"):
+        assert {c for c, _t, _o in claims[oid]} == {(10, 18), (10, 19), (11, 19)}, (
+            "exactly the three cells whichever chain runs second finds stripped"
+        )
 
 
 def test_a_blind_comb_over_a_smear_is_priced_not_called_unknown():

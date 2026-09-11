@@ -318,19 +318,44 @@ def test_sanitizer_allows_crush_when_probe_expiring():
     assert tuple(drop["at"]) == (5, 5)
 
 
-def test_sanitizer_truncates_step_into_green():
+def test_sanitizer_allows_step_into_green():
+    """v1.48 — walking over green is legal, so the chain survives.
+
+    This test used to assert the opposite. Nothing in the engine refuses a
+    step onto stripped ground: it costs -100 at settlement, which is a price
+    the agent is entitled to pay to reach what is behind it. The sanitizer
+    was truncating real chains on a rule that did not exist.
+    """
     view = _view(live=[(5, 5), (5, 6)], green=[(6, 5)],
                  harvesters=[("h1", None)])
     moves = [
         {"a": "drop", "unit": "h1", "at": [5, 5]},
-        {"a": "step", "unit": "h1", "to": [6, 5]},  # green hazard
+        {"a": "step", "unit": "h1", "to": [6, 5]},  # green — legal, just costly
         {"a": "pickup", "unit": "h1"},
     ]
     out, log = ms.sanitize_moves(moves, view)
-    assert not any(m["a"] == "step" for m in out)
-    # chain truncated but a pickup remains so the harvester banks + returns.
+    step = next(m for m in out if m["a"] == "step" and m["unit"] == "h1")
+    assert tuple(step["to"]) == (6, 5)
     assert any(m["a"] == "pickup" and m["unit"] == "h1" for m in out)
-    assert any("truncated chain" in s for s in log)
+    assert not any("truncated chain" in s for s in log)
+
+
+def test_sanitizer_still_refuses_a_drop_onto_green():
+    """The step veto went; the DROP veto stays.
+
+    Landing on stripped ground banks nothing and still pays -100 — self-harm
+    with no upside, and distinct from crossing it to reach a mass. Pins that
+    v1.48 removed one guard and not both.
+    """
+    view = _view(live=[(5, 5), (5, 6), (6, 5)], green=[(6, 5)],
+                 harvesters=[("h1", None)])
+    moves = [
+        {"a": "drop", "unit": "h1", "at": [6, 5]},
+        {"a": "pickup", "unit": "h1"},
+    ]
+    out, log = ms.sanitize_moves(moves, view)
+    drop = next((m for m in out if m["a"] == "drop" and m["unit"] == "h1"), None)
+    assert drop is None or tuple(drop["at"]) != (6, 5)
 
 
 def test_sanitizer_deconflicts_harvester_collision():

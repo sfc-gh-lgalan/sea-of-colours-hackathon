@@ -2448,3 +2448,228 @@ rebuilt the link from a default seat would pass as `p1` and be invisible.
 **Still open, deliberately.** A reloaded player who has already submitted
 gets an *enabled* TRANSMIT button, because nothing on load restores the
 committed lock from `pending[MY_SEAT]`. Worth doing; not this bug.
+---
+
+## 51. ✅ (DONE, v1.48) Every SNAP a seat fired was missing from its own execution log
+
+**Status (v1.48):** Fixed in `tabula_v12/last_night.py` (the baseline every fork
+copies), plus the two forks checked out locally.
+
+**Symptom.** A seat fired a SNAP, the engine resolved it, and the hour was
+simply absent from the seat's own `EXECUTION LOG` — no line, no `FAILED`, no
+gap marker. Found while counting weapons over three headless seasons: the
+cards showed `snap_launch` under `YOU ORDERED` and nothing under execution,
+while the replay frames showed `H05 snap_launch [ok] — p1 fired SNAP at
+(8,14); 1 probe(s) fried (stock 0 SNAP left)`.
+
+**Root cause.** The execution log is not read from the engine; it is rebuilt in
+the harness from replay frames, filtered by `_OWN_ACTION_TAGS`. That set held
+`"snap"`. The engine writes the frame as `snap_launch`, the same spelling as
+the wire verb and exactly like `emp_launch` sitting next to it in the set.
+
+The token was wrong *and the comment beside it argued for the wrong token* —
+it stated that the wire verb was `snap_launch` but the frame tag was `snap`,
+which is backwards. So the previous attempt at this bug (§47, v1.40) read as
+already fixed and the tag was never questioned again. The same set also held
+`"snapped"`, which the engine has never emitted anywhere.
+
+**Why it mattered more than a missing line.** The log is what the reflection
+and journal blocks are anchored to, specifically so a seat "cannot confabulate
+a harvest that never happened". With the SNAP hour missing, the anchor was
+gone. Observed live in `wpn_s3`: the seat fired a SNAP that destroyed
+`probe_p3_3`, saw no SNAP in its log, and wrote *"The SNAP denial worked—I
+spent 100 blue to block p3's probe at (8,14)"* into its strategy journal. It
+was right, with no evidence either way, and that guess then propagated forward
+through the journal into later turns.
+
+**Fix.**
+- `_OWN_ACTION_TAGS`, `_PUBLIC_ORBITAL_TAGS` and the display verb map all key
+  on `snap_launch`.
+- Dropped `"snapped"`; a SNAP hit on your own unit arrives as `damaged`, which
+  was already covered.
+- Added `"chaffed"` — a real engine tag (`simulator.py`) for a launch a rival's
+  flare cancelled, which was being dropped the same way.
+
+**Tests:** `tests/test_harness_frame_tags.py`. Rather than restate the
+vocabulary a third time, it scrapes the tags the engine actually writes and
+asserts two directions: every weapon tag reaches its owner's log, and no token
+in the harness sets is one the engine never emits. The second is what would
+have caught `snapped` — and `snap` — years earlier, since a filter token that
+matches nothing looks exactly like a night where the thing did not happen.
+
+## 52. ✅ (DONE, v1.48) The menu priced our own stripped ground at zero, and the sanitizer then banned walking on it
+
+Two halves of one mistake, pulling in opposite directions: the agent was told
+green was **free**, and simultaneously forbidden to **cross** it.
+
+**Observed.** `wpn_s3` day 6, seat p1. The option menu offered GRAB1 — a walk
+to a +262 mass at (13,26) — and printed:
+
+```
+yield: red ~+262 (1 mass) · blue 0 · green 0
+HAZARD in walk: (13,23) (13,24) (13,25) — WE stripped these to green ...
+```
+
+Zero green, one line above a warning naming three green cells the walk
+crosses. The sanitizer then truncated the chain at the first of them, so the
+mass was never reached. Both numbers were wrong and they were wrong in
+opposite directions.
+
+**Root cause A — pricing.** `option_economics._cell_index` sourced green from
+`world.live` only, and the view's green channel is built inside the
+visible-cell loop (`snowpark/view.py`), so it is visible-only. Ground the seat
+stripped itself therefore vanished from the index the moment it went dark and
+scored as `unknown_cells` — which the yield line renders as nothing. The
+*rival* case was already handled (`_enemy_trail_cells`, OBS-43 fix 0.1); ours
+never was. The seat did know: `hazard_memory.accumulate()` keeps a
+fog-surviving monotonic union, and it was already wired to the sanitizer and
+to the hazard annotator — just not to the pricer.
+
+**Root cause B — legality.** `move_sanitizer` put green in the `bad` set, which
+gates both `_legal_land` (drops) and the step branch, and the step branch calls
+`_truncate` with no reroute attempt. Nothing in the engine refuses a step onto
+green: it costs -100 at settlement, which is a price, not a refusal. The
+module docstring asserted the opposite ("The engine rejects the drop"), and
+that false claim is the most likely reason the veto was ever extended to steps.
+
+**Fix.**
+- `harness.py` publishes the hazard union as `agent_view["stripped_memory"]`.
+- `_cell_index` projects it as GREEN. It **overwrites** the echo projections —
+  we harvested the cell, so a stale red row calling it a vein is simply wrong,
+  the same reasoning as the rival trail — but never a live row, so eyes still
+  beat notes.
+- Green now gates drops only. Landing on stripped ground banks nothing and
+  still pays -100, so that guard stays; crossing it is the agent's call.
+- Docstring corrected to say the drop guard is ours, not the engine's.
+
+Applied to `tabula_v12` and `emp_harvest_test`. The other harnesses keep the
+old behaviour.
+
+**Note on sequencing.** These had to land together. Removing the veto alone
+would have freed the agent to take chains it had been told were free — on the
+turn above, three greens against +262 is net **-38**, so the crossing really
+was the wrong call, just not for the reason the sanitizer gave. Priced
+honestly, the agent declines it on its own.
+
+**Tests:** `tests/test_v12_phase_b.py` gains the mirror of the existing rival
+case (our own wake priced through fog) plus a pin that a live reading still
+beats stale memory; `sea_of_colours/orchestrator_2/tests/test_tabula_v7_fixes.py`
+inverts `test_sanitizer_truncates_step_into_green` to
+`..._allows_step_into_green` and adds a pin that the **drop** veto survived, so
+a future cleanup cannot quietly remove both.
+
+## 53. ✅ (DONE, v1.48) `soc doctor` called a credential healthy because it existed
+
+**Reported as:** "soc doctor actively helped me go wrong: it reports LLM
+credentials present whenever a token merely exists."
+
+`doctor` is the command you run when your agent will not think. It printed:
+
+```
+  LLM credentials  present
+  No problems found.
+```
+
+for any token that could be *resolved* — expired, revoked, or scoped to a
+different account than the one it was aimed at. `credentials_status()` returns
+`(True, '')` on existence and never attempts a call.
+
+**Why this one is expensive rather than merely wrong.** The failure it hides is
+silent by construction. A dead PAT fails in ~130ms with HTTP 401; the seat
+falls back to the built-in heuristic; the heuristic *passes the night*; and an
+agent that passes never harvests, never banks blue and never fires. So the
+visible symptom is a broken **agent**, and the one tool that could have said
+otherwise affirmatively cleared the credential. The forge's `check_wiring.py`
+already carried a comment about this after an afternoon was lost to it
+("three wrong theories — prompt size, a malformed schema, the forge itself —
+before anyone called the model directly"), and it was lost again since.
+
+**Fix.** Doctor now sends one real prompt (16 tokens, 20s cap) through the same
+`CortexChatInvoker` and model a live seat uses, and reports three states that
+need three different responses from the user:
+
+- `absent` — no token. Not a problem: playing, testing, minting and the lab
+  need none, so this stays calm and makes **no** network call.
+- `working (model answered in Nms)` — verified.
+- `REFUSED — a token exists but the model will not answer`, carrying the
+  provider's own reason, added to `PROBLEMS`, exit 1.
+
+`--no-llm-call` skips the probe for an offline check and labels the result
+`NOT verified` rather than quietly reverting to the old lie.
+
+**Tests:** `tests/test_soc_doctor_llm_check.py`. The load-bearing one asserts a
+refused token and a working one can never share a headline; the rest pin that
+a refusal fails the command (people act on `No problems found` alone), that an
+absent credential reaches no network, that the probe cannot raise on a machine
+with no route, and that `--no-llm-call` is honest about what it skipped.
+
+**Fanned out to:** `docs/TEAM_LEADER_GUIDE.md` and its rendered pair
+`guide/leader.html`, `skills/soc-agent-forge/phases/0-mint.md`,
+`references/publishing.md`, and the now-obsolete warning comment in
+`skills/soc-agent-forge/scripts/check_wiring.py`.
+
+---
+
+## 54. ✅ (DONE, v1.48) Two chains ran the same seam from opposite ends and the menu said nothing
+
+**Symptom.** `duel_s4001` day 4, seat p1 (`emp_harvest_test`). The seat
+dropped `harvester_p1` at (11,17), walked six RED cells and banked six
+parcels. It then dropped `harvester_p1_2` at (11,19) — a cell its FIRST
+harvester had harvested an hour earlier — and walked (10,19) and (10,18),
+both also just stripped. Three GREEN parcels, three wasted hours, and the
+model's stated expectation for the night (`"This banks ~1,285 red tonight
+with certainty"`) missed by roughly 694 points.
+
+**Not #52.** That one was about green remembered through fog from an EARLIER
+night, and `stripped_memory` fixed it. This is green the plan creates for
+ITSELF: at planning time all six of CH2's cells genuinely were RED, and they
+only turn green because CH1 — in the same plan, earlier the same night —
+strips them.
+
+**Root cause.** `option_economics.overlap_claims` already exists to catch
+exactly this, and already prints the right warning (`ALREADY COUNTED
+ELSEWHERE ... whichever option runs FIRST banks these; the later one arrives
+to stripped green, worth 0 and -100 each`). It was restricted to mass/pure
+RED:
+
+```python
+if tile != "RED" or _tier(purity) not in ("mass", "pure"):
+    continue
+```
+
+on the reasoning in its own docstring — *"Restricted to mass/pure RED, which
+is where the distortion is worth the ink; a shared trace changes nothing."*
+CH1 and CH2 shared three VEIN cells, so nothing was printed. The one MASS
+cell that DID trigger a warning that night (CH1 vs CH1S at (11,17)) was worth
+LESS than the three veins that did not.
+
+The reasoning is sound per cell and wrong in aggregate, because what a shared
+cell costs is never just its double-counted yield: it is that, PLUS the -100
+the cell has become, PLUS the hour the harvester spends on it. Three veins at
+~131 came to ~694 points and three hours.
+
+**Frequency.** Across the nine post-#52 seasons, 19 occurrences — 11 for
+`emp_harvest_test` (4.7% of its harvests) and 8 for `tabula_v12` (3.2%). The
+signature is unmistakable: the second harvester walks the first one's path
+BACKWARDS, because a rich seam generates top-ranked chains from both ends and
+the agent buys both. `swap_s4001` day 3 is the purest case — stripped h6
+re-walked h9, h5/h10, h4/h11, h3/h12, h2/h13, a perfect five-cell mirror.
+
+**Fix.** The tier filter is replaced by a cumulative test against
+`OVERLAP_WARN_POINTS` (200 ship points — about one vein, or two traces),
+where a shared cell's stake is `_red_ship_points(purity) +
+GREEN_ENDGAME_PENALTY`. Any mass/pure share still warns unconditionally, so
+the change can only ever ADD a warning and never silence one that fires
+today. Both harnesses, since both were losing hours to it.
+
+**Tests:** `tests/test_v12_phase_b.py`. The old
+`test_only_mass_and_pure_overlaps_are_worth_the_ink` is inverted into a pair
+that pins both sides of the threshold (one trace stays silent at 130; two
+cells warn at 290), plus a pin that a lone mass still always warns, plus
+`test_two_chains_running_one_seam_from_opposite_ends_are_flagged` — the
+duel_s4001 night in miniature, which returns `{}` against the old filter.
+
+**Not fixed here.** The menu still RANKS the two chains independently, so
+both remain near the top; the agent is now told they collide rather than
+prevented from taking both. Re-pricing the remaining options after each
+selection is the larger fix, and wants its own issue.
