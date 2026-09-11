@@ -181,8 +181,17 @@ def stage(
     occupied = {tuple(c) for c in board.our_probes}
     occupied |= {tuple(c) for c in board.rival_probes}
 
+    # A rival probe must be PLACED and also RECORDED as a public launch.
+    # `place_probe` only sets the entity position, which the opponent's own
+    # seat can see but ours cannot: our view learns about rival probes solely
+    # through the public channels `_competitor_intel` derives (§3.15 — every
+    # launch is observable). Without the second call, `board.rival_probes` sat
+    # on the board completely invisible to us, so every probe-targeting play
+    # resolved zero eyes and refused on a board whose whole premise was being
+    # watched. Same shape of bug as the `siege` rack above.
     for cell in board.rival_probes:
         wb.place_probe(at=cell, owner="p2")
+        wb.enemy_probe_launched(at=cell)
 
     # Opposition fleets are reconciled the same way, then the captured
     # positions are applied on top so a rival that the analysis put on
@@ -201,6 +210,7 @@ def stage(
         for i, cell in enumerate(extra):
             owner = seats[1 + (i % max(1, len(seats) - 1))]
             wb.place_probe(at=cell, owner=owner)
+            wb.enemy_probe_launched(at=cell)     # public, as above
             occupied.add(cell)
 
     if rung.rival_harvesters_on_seam:
@@ -239,6 +249,10 @@ def stage(
         player="p1",
         emp=max(loadout.emp, rung.our_emp),
         chaff=max(loadout.chaff, rung.our_chaff),
+        # No rung grants snap, so there is no floor to take the max against —
+        # the loadout is the only source. Omitting this left every snap agent
+        # with an empty rack on every board.
+        snap=loadout.snap,
     )
     blue = loadout.blue or rung.our_blue
     if blue:

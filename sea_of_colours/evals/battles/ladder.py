@@ -180,6 +180,7 @@ class Loadout:
     id: str
     emp: int = 0
     chaff: int = 0
+    snap: int = 0
     blue: int = 0
     note: str = ""
 
@@ -190,7 +191,13 @@ LOADOUTS: tuple[Loadout, ...] = (
             note="two chaff: can cancel a lift, or strand a committed rival"),
     Loadout("emp", emp=2, blue=200,
             note="two EMP: can deny ground for eight hours and time a walk-in"),
-    Loadout("both", emp=1, chaff=2, blue=400,
+    # There was no snap loadout at all, so a snap agent could not be armed on
+    # any board and its play was the one thing the lab could never show. Two
+    # charges, because the strong snap play fires at H1 and wants a second for
+    # the following night.
+    Loadout("snap", snap=2, blue=200,
+            note="two snap: can refuse an hour-one landing on a watched pure"),
+    Loadout("both", emp=1, chaff=2, snap=2, blue=400,
             note="a full rack — if the play does not change, nothing was learned"),
 )
 

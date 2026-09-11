@@ -545,6 +545,7 @@ class WorldBuilder:
         player: PlayerId = "p1",
         emp: int = 0,
         chaff: int = 0,
+        snap: int = 0,
     ) -> "WorldBuilder":
         """Pre-arm the seat's weapon stockpile.
 
@@ -552,13 +553,20 @@ class WorldBuilder:
         the orbit phase. For night-phase eval scenarios that need the
         agent to *use* a weapon, we skip the build cost and stamp the
         stockpile directly.
+
+        ``snap`` was missing here, in ``Loadout`` and in ``stage.py``, which
+        meant no lab board could arm a snap at all: a snap agent ran every rung
+        with an empty rack and its play could never be observed. The engine has
+        always supported the verb — it was only the fixtures that could not
+        express it.
         """
         sess = self._ensure_session()
         slot = sess.weapon_stock.setdefault(
-            player, {"emp": 0, "chaff": 0}
+            player, {"emp": 0, "chaff": 0, "snap": 0}
         )
         slot["emp"] = int(emp)
         slot["chaff"] = int(chaff)
+        slot["snap"] = int(snap)
         return self
 
     def give_blue_purity(
