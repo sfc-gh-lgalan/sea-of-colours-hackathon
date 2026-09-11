@@ -49,10 +49,15 @@ if str(Path.cwd()) not in sys.path:
 # the trap: `snap_launch` on the wire arrives as `snap` in the replay frame, so
 # a tag set keyed on the verb silently drops every frame and the agent journals
 # that the move never executed.
+#: (wire verb, replay frame tag) per weapon. They are the SAME for all three:
+#: v12 v1.48 corrected a comment in `last_night.py` that had claimed the snap
+#: frame was spelled `snap` while the wire verb was `snap_launch`. This table
+#: encoded that mistake, so the checker would have passed a forge emitting the
+#: wrong tag and failed one emitting the right one.
 WEAPONS: Dict[str, Tuple[str, str]] = {
     "emp": ("emp_launch", "emp_launch"),
     "chaff": ("chaff_flare", "chaff_flare"),
-    "snap": ("snap_launch", "snap"),
+    "snap": ("snap_launch", "snap_launch"),
 }
 
 
@@ -94,6 +99,46 @@ class _FakePattern:
     waves: List[_FakeWave] = field(default_factory=lambda: [_FakeWave()])
 
 
+def _why_no_option(forge: Any, label: str, weapon: str) -> str:
+    """The REAL reason an option did not build, not a guess at it.
+
+    Two causes dominate and they need opposite fixes: a missing `scorch.py`
+    (geometry unavailable, so no aim points) versus a `when`/`targets` that
+    genuinely did not match the board.
+    """
+    # 1. the module the targeting modes depend on
+    try:
+        _imp(label, "scorch")
+    except Exception as exc:                            # noqa: BLE001
+        return ("  CAUSE: scorch.py is missing or will not import "
+                f"({type(exc).__name__}: {exc}).\n"
+                "  `targets=\"rival_probes\"` and `targets=\"redsign\"` need it "
+                "for salvo geometry.\n"
+                "  FIX: re-run forge_install.py --upgrade --apply, which now "
+                "copies it in.")
+
+    # 2. ask the forge itself what it saw
+    try:
+        plays = [p for p in getattr(_imp(label, "weapon_plays"), "PLAYS", ())
+                 if p.weapon == weapon]
+        for p in plays:
+            for view, pats in ((_view(weapon), [_FakePattern()]),
+                               ({**_view(weapon), "redsign": []}, [])):
+                _aim, _comb, notes = forge._aim_points(p, view, pats)
+                if notes:
+                    return (f"  {p.play_id} reported: " + "; ".join(notes)
+                            + f"\n  (when={p.when!r}, targets={p.targets!r}, "
+                              f"min_targets={p.min_targets})")
+        if plays:
+            p = plays[0]
+            return (f"  no notes returned. Check when={p.when!r} against the "
+                    "board, and\n  min_targets="
+                    f"{p.min_targets} against how many targets exist.")
+    except Exception as exc:                            # noqa: BLE001
+        return f"  could not diagnose further: {type(exc).__name__}: {exc}"
+    return "  no plays declared for this weapon."
+
+
 def _view(weapon: str, n: int = 2) -> Dict[str, Any]:
     """A synthetic board rich enough for every targeting mode to fire.
 
@@ -101,6 +146,17 @@ def _view(weapon: str, n: int = 2) -> Dict[str, Any]:
     reads the smear off the view and returns nothing for a region with no
     cells, which made every ``targets="redsign"`` play look broken when it was
     the fixture that was thin.
+
+    Two more shapes are load-bearing for the same reason, both added after a
+    real play was reported broken by a thin board:
+
+    * ONE rival eye INSIDE probe-vision range of the smear centre, or
+      ``targets="finder_probe"`` finds no covering eye and refuses. The three
+      distant eyes below rank for ``rival_probes`` but cover nothing.
+    * A PURE — a ``red_tiles`` row at purity 255 — inside that same smear, with
+      an eye near it, or ``targets="contested_pure"`` has nothing to contest.
+      `red_tiles` used to be empty here, which is not a board any pure play can
+      fire on.
     """
     smear = [[x, y] for x in range(18, 25) for y in range(18, 24)]
     return {
@@ -113,15 +169,27 @@ def _view(weapon: str, n: int = 2) -> Dict[str, Any]:
         ],
         "grid": {"width": 32, "height": 32},
         "probe_stock": 4,
-        # a RIVAL smear (mine False) — an own sign is refused by design
-        "redsign": [{"cells": smear, "mine": False, "x": 21, "y": 20}],
-        "red_tiles": [], "blue_tiles": [], "blue_sign": [],
-        # three rival eyes, freshest last, so recency ranking has something
-        # to rank and min_targets has enough to clear
+        # a RIVAL smear (mine False) — an own sign is refused by design.
+        # `center` must be a LIST, which is the shape the real seat view uses:
+        # option_economics reads `row.get("center", row.get("centre"))` and
+        # `finder_probes` the same. This fixture carried only x/y, so every
+        # centre-reading mode saw no centre and refused on a board that looked
+        # complete.
+        "redsign": [{"cells": smear, "mine": False,
+                     "center": [21, 20], "x": 21, "y": 20}],
+        # the pure they lit, at full purity, visible to US. This is what
+        # `contested_pure` aims at and what `finder_probe` upgrades on.
+        "red_tiles": [{"x": 21, "y": 20, "purity": 255}],
+        "blue_tiles": [], "blue_sign": [],
+        # three rival eyes far off, freshest last, so recency ranking has
+        # something to rank and min_targets has enough to clear — PLUS one eye
+        # adjacent to the pure, which is the covering eye every pure-denial
+        # mode needs.
         "enemy_probes": [{"at": [10 + 3 * i, 10], "day_seen": i + 1}
-                         for i in range(3)],
+                         for i in range(3)] + [{"at": [22, 20], "day_seen": 4}],
         "rival_probes": [{"x": 10 + 3 * i, "y": 10, "freshness": "fresh"}
-                         for i in range(3)],
+                         for i in range(3)] + [{"x": 22, "y": 20,
+                                                "freshness": "fresh"}],
         "station_intel": {"self": {"blue": {"grade": "low"}}},
     }
 
@@ -130,7 +198,7 @@ def _imp(label: str, mod: str) -> Any:
     return importlib.import_module(f"{PKG_ROOT}.{label}.{mod}")
 
 
-def check(label: str) -> Result:
+def check(label: str, *, skip_llm: bool = False) -> Result:
     r = Result()
     root = HARNESSES / label
     if not root.is_dir():
@@ -168,6 +236,78 @@ def check(label: str) -> Result:
                   "still disarmed, which is the normal state of a fresh mint. "
                   "Run forge_install.py, or wire one by hand.")
             return r
+
+    # ── -1 · CAN THE MODEL BE REACHED AT ALL? ─────────────────────────────
+    #
+    # Ranks BELOW procurement because nothing else means anything without it.
+    # A whole afternoon went into diagnosing "the weapons never fire" when every
+    # model call was returning HTTP 401 in 130ms: the seat fell back to the
+    # built-in heuristic, the heuristic passes the night, and a passing agent
+    # never harvests, never banks blue and never fires. Three wrong theories —
+    # prompt size, a malformed schema, the forge itself — before anyone called
+    # the model directly.
+    #
+    # `soc doctor` used to be insufficient here — its `credentials_status()`
+    # returns (True, '') whenever a token EXISTS, so it reported "LLM
+    # credentials present" while every request was refused. Since v1.48
+    # doctor makes this same real call, so the two now agree. We keep the
+    # check anyway: this script is the one an agent runs unattended, and it
+    # should not depend on the user having run another command first.
+    if not skip_llm:
+        try:
+            from sea_of_colours.orchestrator_2.cortex_chat import (
+                CortexChatInvoker,
+            )
+            from sea_of_colours.orchestrator_2.harnesses.tabula_v12.harness \
+                import _THINKER_CHAT_MODEL as _MODEL
+            res = CortexChatInvoker(
+                model=_MODEL, response_format=None, max_completion_tokens=20,
+            ).invoke("Reply with exactly: OK", wallclock_cap_s=20)
+            ok = bool(res.get("ok"))
+            err = str(res.get("error") or "")[:200]
+            r.add("the model answers a real call", ok,
+                  "" if ok else
+                  f"HTTP {res.get('status_code')} in "
+                  f"{res.get('elapsed_ms')}ms.\n  {err}\n"
+                  "  Every LLM seat will fall back to the heuristic, which "
+                  "PASSES the night —\n  so no blue is banked and nothing "
+                  "ever fires. This is not an agent bug.\n"
+                  "  A 390422 means this machine's IP is not on the Snowflake "
+                  "network policy\n  allowlist: check whether your VPN is on.")
+        except Exception as exc:                        # noqa: BLE001
+            r.add("the model answers a real call", False,
+                  f"could not even attempt it: {type(exc).__name__}: {exc}")
+
+    # ── 0 · PROCUREMENT — can the agent even BUY the weapon? ──────────────
+    #
+    # Rung zero, and the one that hid a real bug. Every firing rung can pass
+    # while the rack stays empty all game, because the orbital is a separate
+    # code path. Stock tabula_v12 can only emit build_chaff and build_emp.
+    for w in weapons:
+        try:
+            op = _imp(label, "orbit_policy")
+            # `blue_purity_total` is the key the orbital reads — a plausible
+            # `blue_purity` reads as 0 and fails a working agent.
+            # Deliberately RICH. The orbital spends on harvesters and probes
+            # before it reaches ordnance, so a lean fixture starves procurement
+            # and fails a working agent — the third false FAIL of this exact
+            # shape. The question is "CAN it buy", not "does it prioritise".
+            view = {"orbit": {"credits": 6000, "blue_purity_total": 3000,
+                              "weapon_stock": {}, "probes": 4,
+                              "harvesters": [{"id": "h1"}, {"id": "h2"}]},
+                    "my_assets": [], "blue_tiles": [], "red_tiles": []}
+            acts, _why = op.plan_orbit_actions(view, weapons_enabled=True)
+            bought = {a.get("a") for a in acts}
+            ok = f"build_{w}" in bought
+            r.add(f"procurement · orbital can buy {w}", ok,
+                  "" if ok else
+                  f"no build_{w} action with 900 blue and 900 credits in hand. "
+                  f"The play can never arm — every firing rung below may PASS "
+                  f"while the rack stays empty for the whole game. Emitted: "
+                  f"{sorted(bought) or 'nothing'}")
+        except Exception as exc:                        # noqa: BLE001
+            r.add(f"procurement · orbital can buy {w}", False,
+                  f"{type(exc).__name__}: {exc}")
 
     # ── 1 · the schema wall ───────────────────────────────────────────────
     try:
@@ -301,11 +441,17 @@ def check(label: str) -> Result:
                     )
                     built += [o for o in opts.values()
                               if getattr(o, "kind", "") == w]
+                # Diagnose rather than guess. `_aim_points` catches import and
+                # geometry failures into a notes list and returns no aim, so the
+                # option silently vanishes. The first version of this message
+                # blamed `when`/`combines_with` and sent a builder down the
+                # wrong path for most of an hour when the real cause was a
+                # missing scorch.py.
                 r.add(f"an option is built for {w}", bool(built),
                       "" if built else
                       "no option came out of build_options on a synthetic "
-                      "rival-redsign board with stock in the rack — check the "
-                      "play's `when` and `combines_with`")
+                      "board with stock in the rack.\n"
+                      + _why_no_option(forge, label, w))
                 for o in built:
                     lines = list(getattr(o, "execute_lines", ()) or [])
                     verb = WEAPONS[w][0]
@@ -327,6 +473,9 @@ def check(label: str) -> Result:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--skip-llm", action="store_true",
+                    help="skip the live model call (offline, or in a tight "
+                         "loop). Every other check is static.")
     ap.add_argument("label")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
@@ -336,7 +485,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    res = check(args.label)
+    res = check(args.label, skip_llm=args.skip_llm)
 
     if args.as_json:
         print(json.dumps({

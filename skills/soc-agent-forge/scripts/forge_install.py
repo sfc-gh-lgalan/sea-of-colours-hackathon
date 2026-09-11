@@ -30,10 +30,11 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 HARNESSES = Path("sea_of_colours/orchestrator_2/harnesses")
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -102,6 +103,22 @@ def hooks(pkg: str) -> List[Tuple[str, str, str, str]]:
 
         # ── packager.py — rung 2c, compiling to wire moves ─────────────────
         # (no line insertion needed; see TAIL_HOOKS + VERIFY)
+        #
+        # ...except this one. Position in `pk.moves` IS the hour, so an
+        # hour-locked launch compiled behind a juice chain is CUT for a spent
+        # hour ("wanted hour 1 and 4 move(s) are already queued"). That is the
+        # chosen-then-lost class: the card shows the play in `[plan=...]` and no
+        # `*_launch` reaches the wire. Sits immediately after
+        # `_order_for_probe_support`, the baseline's own legality reorder, and is
+        # justified on the same grounds — not a preference.
+        (
+            "packager.py",
+            "    pk.log.extend(order_log)",
+            f"    {MARKER}\n"
+            "    ordered, hour_log = weapon_forge.order_for_weapon_hours(ordered)\n"
+            "    pk.log.extend(hour_log)",
+            "after",
+        ),
 
         # ── prompt.py — rung 1 (the rack) and rung 4 (doctrine) ────────────
         (
@@ -174,6 +191,67 @@ def hooks(pkg: str) -> List[Tuple[str, str, str, str]]:
             "after",
         ),
 
+        # ── agency.py — the DENIAL YIELD LINE ─────────────────────────────
+        # A weapon renders "yield: red ~+0" and loses to a quantified
+        # alternative. Swap in a line priced in what the RIVAL loses.
+        (
+            "agency.py",
+            "    lines.append(_fmt_yield(",
+            f"    {MARKER}\n"
+            "    _dy = (opt.payload or {}).get(\"denial_yield\")\n"
+            "    if _dy:\n"
+            "        lines.append(_dy)\n"
+            "    else:\n"
+            "        lines.append(_fmt_yield(",
+            "replace",
+        ),
+
+        # ── orbit_policy.py — PROCUREMENT, rung zero ──────────────────────
+        # The stock orbital can only emit build_chaff and build_emp. A declared
+        # snap play passes every wiring check and can never arm, because the
+        # rack is filled on a code path the night phase never touches.
+        (
+            "orbit_policy.py",
+            "    # Priority 4: top the probe magazine up. A flat \"build 2\" ran dry and",
+            f"    {MARKER}\n"
+            "    # PLACEMENT IS LOAD-BEARING. This must sit with the stock weapon\n"
+            "    # branch (priority 3), BEFORE the probe magazine top-up — probes\n"
+            "    # cost 250c each and a 3-probe batch spends 750c, so a hook placed\n"
+            "    # after them is handed an empty wallet. That is exactly what\n"
+            "    # happened: an EMP agent armed 3 times from the stock branch while\n"
+            "    # a SNAP agent never armed once, reporting 'could not afford it\n"
+            "    # (credits 0/250)' every night with plenty of blue in the bank.\n"
+            "    remaining = weapon_forge.add_procurement(\n"
+            "        actions, descriptors, view, remaining=remaining,\n"
+            "        weapons_enabled=weapons_enabled)\n"
+            "\n"
+            "    # Priority 4: top the probe magazine up. A flat \"build 2\" ran dry and",
+            "replace",
+        ),
+
+        # ── orbit_policy.py — the UNCAPPED surplus branch ─────────────────
+        # The stock orbital ends its weapon section with a bare
+        # `elif _afford_chaff()` / `elif _afford_emp()` that ignores the
+        # stockpile caps entirely — a "blue surplus top-up". So a snap-only
+        # agent still bought an EMP it can never fire, burning 200 blue and
+        # 250 credits and starving the snap it actually wanted. Gate the
+        # surplus on the cap so `never_buy_what_you_cannot_fire` is real.
+        (
+            "orbit_policy.py",
+            "        elif _afford_chaff():",
+            f"        {MARKER}\n"
+            "        elif chaff_stock < dials.chaff_stockpile_cap \\\n"
+            "                and _afford_chaff():",
+            "replace",
+        ),
+        (
+            "orbit_policy.py",
+            "        elif _afford_emp():",
+            f"        {MARKER}\n"
+            "        elif emp_stock < dials.emp_stockpile_cap and _afford_emp():",
+            "replace",
+        ),
+
         # ── value_pyramid.py — the blue/red trade ─────────────────────────
         (
             "value_pyramid.py",
@@ -233,12 +311,46 @@ def _imports_line(pkg: str) -> str:
     return f"from sea_of_colours.orchestrator_2.harnesses.{pkg} import weapon_forge"
 
 
-def check(root: Path) -> Tuple[bool, List[str]]:
-    """Verify every anchor is present exactly once. Returns (ok, problems)."""
+def _hook_call(text: str) -> Optional[str]:
+    """The `weapon_forge.<fn>(` this hook inserts, if any.
+
+    Used to make the installer idempotent PER HOOK rather than per file. A file
+    can hold several hooks — `orbit_policy.py` has both the dials and
+    procurement — so 'has this file been touched' cannot tell you whether a
+    particular hook is present, and re-auditing a consumed anchor reports drift
+    on a fork the installer itself built.
+    """
+    m = re.search(r"weapon_forge\.(\w+)\(", text)
+    return f"weapon_forge.{m.group(1)}(" if m else None
+
+
+def _already_has(root: Path, fname: str, text: str) -> bool:
+    """True when this specific hook is already installed in this file."""
+    call = _hook_call(text)
+    if call is None:
+        return False
+    f = root / fname
+    return f.is_file() and call in f.read_text(encoding="utf-8")
+
+
+
+def check(root: Path,
+          only: Optional[Set[str]] = None) -> Tuple[bool, List[str]]:
+    """Verify every anchor is present exactly once. Returns (ok, problems).
+
+    ``only`` narrows the audit for a retrofit. A hook installed earlier has
+    CONSUMED its anchor, so auditing it again reports drift on a healthy fork —
+    which is why the first retrofit attempt refused a fork it had itself built.
+    """
     problems: List[str] = []
     pkg = root.name
     seen: Dict[str, int] = {}
     for fname, anchor, _text, _where in hooks(pkg):
+        if only is not None and fname not in only:
+            continue
+        # Skip a hook that is already in — its anchor was consumed on the way.
+        if only is not None and _already_has(root, fname, _text):
+            continue
         key = f"{fname}::{anchor}"
         if key in seen:
             continue
@@ -286,13 +398,70 @@ def already_installed(root: Path) -> bool:
     return False
 
 
-def build_edits(root: Path) -> Dict[str, str]:
-    """Produce the new content for each touched file. Pure — writes nothing."""
+#: Every hook, keyed by the CALL that proves it is present, because a file can
+#: carry one hook and be missing another — `orbit_policy.py` holds both the
+#: dials hook and procurement, so checking the file marker alone reported a
+#: stale agent as up to date.
+_HOOK_SIGNATURES: List[Tuple[str, str, str]] = [
+    ("chat_schema.py", "widen_schema",
+     "the move enum — the model physically cannot emit the verb"),
+    ("agency.py", "build_options",
+     "the option itself — nothing is ever offered"),
+    ("packager.py", "packers()",
+     "_DISPATCH — the option is chosen but compiles to nothing"),
+    ("packager.py", "order_for_weapon_hours",
+     "pack ORDER — the play is chosen and then CUT for a spent hour, so the "
+     "card shows it in [plan=...] and no launch reaches the wire"),
+    ("prompt.py", "format_rack_block",
+     "the rack block — the night phase is not told what it holds"),
+    ("prompt.py", "doctrine_for",
+     "doctrine — the weapon is never argued for"),
+    ("last_night.py", "frame_tags",
+     "the render gap — the hour comes back blank next night"),
+    ("orbit_policy.py", "tune_dials",
+     "the buy dials — buy_asap and the stockpile caps are inert"),
+    ("orbit_policy.py", "add_procurement",
+     "PROCUREMENT — without it a snap play can NEVER arm"),
+    ("value_pyramid.py", "strong_chain_red_min",
+     "the blue/red trade — declared but inert without it"),
+]
+
+
+def missing_hooks(root: Path) -> List[Tuple[str, str]]:
+    """Hooks this fork lacks. Non-empty means it predates a skill fix.
+
+    Checked per HOOK, not per file — the forge is copied into each agent rather
+    than imported, so an agent minted before a fix keeps the old code forever
+    and there is no other way to notice.
+    """
+    out: List[Tuple[str, str]] = []
+    for fname, call, why in _HOOK_SIGNATURES:
+        f = root / fname
+        if not f.is_file():
+            continue
+        if call not in f.read_text(encoding="utf-8"):
+            out.append((f"{fname} · {call}", why))
+    return out
+
+
+def build_edits(root: Path,
+                only: Optional[Set[str]] = None) -> Dict[str, str]:
+    """Produce the new content for each touched file. Pure — writes nothing.
+
+    ``only`` restricts the work to a set of filenames, for a retrofit. Without
+    it a retrofit fails on the anchors that were CONSUMED at first install —
+    those hooks are present and their anchor text is gone, which is success, not
+    drift.
+    """
     pkg = root.name
     imp = _imports_line(pkg)
     out: Dict[str, str] = {}
 
     for fname, anchor, text, where in hooks(pkg):
+        if only is not None and fname not in only:
+            continue
+        if only is not None and _already_has(root, fname, text):
+            continue
         src = out.get(fname) or (root / fname).read_text(encoding="utf-8")
         lines = src.splitlines()
         new: List[str] = []
@@ -319,6 +488,10 @@ def build_edits(root: Path) -> Dict[str, str]:
     # Tail additions, plus the import every hooked file needs. Files that only
     # need a tail (packager, last_night) are loaded here for the first time.
     for fname, tail in TAIL_HOOKS.items():
+        if only is not None and fname not in only:
+            continue
+        if only is not None and _already_has(root, fname, tail):
+            continue
         src = out.get(fname)
         if src is None:
             f = root / fname
@@ -365,6 +538,12 @@ def _insert_import(src: str, imp: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("label", help="agent label, e.g. redwatch_reaper")
+    ap.add_argument("--upgrade", action="store_true",
+                    help="retrofit an already-forged agent: refresh the copied "
+                         "weapon_forge.py and add any hooks it is missing. Use "
+                         "when the skill has been fixed since the agent was "
+                         "minted — the forge is copied, so fixes do not "
+                         "propagate on their own.")
     ap.add_argument("--apply", action="store_true",
                     help="write the changes (default is a dry run)")
     args = ap.parse_args()
@@ -379,12 +558,24 @@ def main() -> int:
         print(f"no such fork: {root}", file=sys.stderr)
         return 2
 
-    if already_installed(root):
-        print(f"  {args.label}: forge already installed — nothing to do.")
+    if already_installed(root) and not args.upgrade:
+        missing = missing_hooks(root)
+        if missing:
+            print(f"  {args.label}: forge installed, but {len(missing)} hook(s) "
+                  f"are MISSING — this fork predates them:")
+            for f, why in missing:
+                print(f"      {f:<18} {why}")
+            print("\n  The forge is COPIED into each agent, not imported, so a"
+                  "\n  skill fix does not reach an agent already minted. Retrofit:"
+                  f"\n      python {sys.argv[0]} {args.label} --upgrade --apply")
+            return 1
+        print(f"  {args.label}: forge already installed and up to date.")
         print("  Add weapons by editing weapon_plays.py in that folder.")
         return 0
 
-    ok, problems = check(root)
+    _only = ({m[0].split(" · ")[0] for m in missing_hooks(root)}
+             if args.upgrade else None)
+    ok, problems = check(root, only=_only)
     if not ok:
         print(f"\n  REFUSING to patch {args.label}:\n")
         for p in problems:
@@ -392,12 +583,28 @@ def main() -> int:
         print()
         return 1
 
-    edits = build_edits(root)
+    if args.upgrade:
+        # Retrofit: refresh the copied forge and add only the hooks this fork
+        # lacks. Files that already carry a hook are left alone — re-applying an
+        # anchor that was consumed at install time would duplicate the insert.
+        missing = missing_hooks(root)
+        if not missing:
+            print(f"  {args.label}: already up to date — refreshing "
+                  "weapon_forge.py only.")
+        else:
+            print(f"  {args.label}: retrofitting {len(missing)} hook(s):")
+            for f, why in missing:
+                print(f"      {f:<40} {why}")
+        need = {m[0].split(" · ")[0] for m in missing}
+        edits = build_edits(root, only=need) if need else {}
+    else:
+        edits = build_edits(root)
 
     print()
     print(f"  forge install · {args.label}" + ("" if args.apply else "  (DRY RUN)"))
     print("  " + "-" * 60)
     print(f"  copy in    weapon_forge.py   ({_tlines('weapon_forge.py')} lines, do not edit)")
+    print(f"  copy in    scorch.py         ({_tlines('scorch.py')} lines, EMP/salvo geometry)")
     print(f"  copy in    weapon_plays.py   ({_tlines('weapon_plays.py')} lines, YOURS)")
     for fname in sorted(edits):
         before = len((root / fname).read_text(encoding="utf-8").splitlines())
@@ -412,8 +619,21 @@ def main() -> int:
 
     for fname, content in edits.items():
         (root / fname).write_text(content, encoding="utf-8")
-    for t in ("weapon_forge.py", "weapon_plays.py"):
-        shutil.copy2(TEMPLATES / t, root / t)
+    # scorch.py provides the real EMP salvo geometry that `targets=
+    # "rival_probes"` and `targets="redsign"` depend on. It was NOT copied for
+    # the skill's first three builds, so an EMP agent failed rung 6 with an
+    # error blaming `when`/`combines_with` while the true cause was a swallowed
+    # ImportError. It imports only `typing` and `game.weapons`, so copying it
+    # unconditionally costs nothing and removes a whole class of dead end.
+    for t in ("weapon_forge.py", "scorch.py", "weapon_plays.py"):
+        dest = root / t
+        # weapon_plays.py is the TEAM'S file and the only one they edit. Never
+        # copy over an existing one: on a retrofit that silently deletes every
+        # play the team wrote, which is the worst outcome this script can have.
+        if t == "weapon_plays.py" and dest.is_file():
+            print(f"  keep       {t:<18} (yours — left untouched)")
+            continue
+        shutil.copy2(TEMPLATES / t, dest)
 
     print("  Installed. Next:")
     print(f"    1. edit  {root}/weapon_plays.py")

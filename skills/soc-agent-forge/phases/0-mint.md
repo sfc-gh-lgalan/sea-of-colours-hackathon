@@ -33,8 +33,10 @@ git remote add upstream https://github.com/sfc-gh-lgalan/sea-of-colours-hackatho
 `origin` is theirs and the only place they push. `upstream` is where kit fixes
 come from and they never push to it.
 
-Also check `No problems found`, and `LLM credentials present` for anyone who will
-run an LLM agent.
+Also check `No problems found`, and `LLM credentials working` for anyone who will
+run an LLM agent. Since v1.48 doctor proves that with a real model call rather
+than by finding a token, so `working` means the model answered — a refused PAT
+now reports `REFUSED` and fails the command.
 
 ## What actually needs Snowflake
 

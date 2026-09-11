@@ -31,7 +31,7 @@ So the choice depends on which constraint bites first:
 
 The trap is that CHAFF is easiest to *wire* and hardest to *fund*: 300 blue
 means the five blue gates start to matter, so a team that wires chaff in ten
-minutes may still never fire it. Read `references/blue-economy.md` in that case —
+minutes may still never fire it. Read `references/blue-and-buying.md` in that case —
 but only after the weapon fires.
 
 ## What each one actually does

@@ -61,20 +61,34 @@ ECONOMY = EconomyPolicy()
 
 
 PLAYS: Tuple[WeaponPlay, ...] = (
-    WeaponPlay(
-        play_id="CANCEL_SMASH",
-        weapon="chaff",
-        when="redsign_theirs",
-        hour="super_early",
-        combines_with="blind_grab",
-        why=(
-            "a seat that has just found a pure drops on it at hour 1, so "
-            "cancelling that one hour takes their whole opening and leaves the "
-            "pure sitting there for us to walk onto"
-        ),
-    ),
+    # ─── ADD YOUR MOVE HERE ───────────────────────────────────────────────
+    # Both examples below are COMMENTED OUT on purpose. Uncomment one and
+    # rename it, or write your own. An unedited file declares NO plays and
+    # `check_wiring.py` will say so — that is correct, not a bug.
+    #
+    # It used to ship CANCEL_SMASH live, and six separate builders either
+    # shipped it by accident or spent time working out whether they should.
 
-    # Add more moves here. A second weapon is one more entry — for example:
+    # ─────────────────────────────────────────────────────────────────────
+    # THIS IS A PLACEHOLDER. Rename `play_id` to YOUR move and rewrite `why`,
+    # or delete the whole block. It is live code, not a comment: leave it and
+    # your agent ships a move called CANCEL_SMASH, buys chaff to feed it, and
+    # your own weapon competes with it on the menu.
+    # ─────────────────────────────────────────────────────────────────────
+    # WeaponPlay(
+    #     play_id="CANCEL_SMASH",
+    #     weapon="chaff",
+    #     when="redsign_theirs",
+    #     hour="super_early",
+    #     combines_with="blind_grab",
+    #     why=(
+    #         "a seat that has just found a pure drops on it at hour 1, so "
+    #         "cancelling that one hour takes their whole opening and leaves the "
+    #         "pure sitting there for us to walk onto"
+    #     ),
+    # ),
+    #
+    # # Add more moves here. A second weapon is one more entry — for example:
     #
     # WeaponPlay(
     #     play_id="TEMPO_TAX",

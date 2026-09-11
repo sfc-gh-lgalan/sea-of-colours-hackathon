@@ -2,9 +2,11 @@
 
 **Two conditions before opening this with a team:**
 
-1. The chosen weapon costs **≥200 blue** (EMP or chaff). SNAP at 100 is
-   affordable within V12's existing behaviour — do not send a team here for a
-   SNAP.
+1. The chosen weapon costs **≥200 blue** (EMP or chaff) — **or it is a SNAP and
+   you have not set `buy_asap=True`.** SNAP is only 100 blue, but V12's
+   `blue_always_build` **defaults to 300**, so a stock orbital will not buy one
+   until 300 blue is banked, which in a 7-day season can be never. A snap agent
+   that skips the economy dials ships disarmed.
 2. **The weapon already fires.** This is not optional ordering.
 
 The second condition comes from the baseline's own README, and it is the opposite

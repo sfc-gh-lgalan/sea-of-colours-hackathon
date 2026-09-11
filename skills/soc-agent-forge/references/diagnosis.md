@@ -1,6 +1,6 @@
 # Diagnosis — "my agent won't fire"
 
-Six distinct causes, six different fix sites. Classify before editing. Nearly
+Seven distinct causes, seven different fix sites. Classify before editing. Nearly
 every hour lost to weapons work is an hour spent fixing the wrong one.
 
 The reason this is hard: **each rung is invisible until the one before it works,
@@ -12,14 +12,62 @@ crash — it silently never appears.
 | Evidence in the cards / lab take | Cause | Fix site |
 | --- | --- | --- |
 | Option id never appears in the menu block | **never offered** | `agency.py` builder, or the trigger predicate never true |
+| Never offered, and the notes say "no target / needs N, has 0" | **aimed at a channel the view does not carry** | the target resolver — see below |
 | On the menu, named in the plan, no move in the orders | **never compiled** | `chat_schema.py` enum, `packager._DISPATCH` |
+| Named in the plan, log says `cut …: wanted hour 1 and N move(s) are already queued` | **cut for a spent hour** | pack ORDER — `weapon_forge.order_for_weapon_hours` |
 | Move in the orders, that hour blank in the execution log | **never rendered** | `last_night.py` tag sets + caption map |
 | On the menu with full rationale, plan chose something else | **lost the argument** | the `rationale` text, `_KIND_BLURB` framing, prompt length |
 | Option never offered and the rack shows zero | **never afforded** | `orbit_policy.py`, the five blue gates |
 | Refused with reasoning that is *factually wrong about the weapon* | **contradicted by threat-side doctrine** | emit a `CORRECTION` after the `BEWARE_*` block — see `doctrine-conflicts.md` |
 
-The sixth is the one that is easiest to misdiagnose as the fourth, and the tell
-is specific: **read what the agent said.** "Lost the argument" sounds like a
+## The one that cost the most: a plausible key is not a channel
+
+The single most expensive bug in this skill's history, and it hid for weeks
+behind a fully green wiring check.
+
+Every probe-targeting mode read the seat view like this:
+
+```python
+rows = agent_view.get("enemy_probes") or agent_view.get("rival_probes") or []
+```
+
+**Neither key exists.** The seat view carries no flat probe list at all. So
+`finder_probe`, `rival_probes` and `contested_pure` resolved zero eyes on every
+board of every season and refused in silence. The plays were declared, wired,
+funded, argued for, and could never fire. `check_wiring` passed throughout,
+because its synthetic fixture *did* supply the invented key.
+
+A rival probe launch is PUBLIC (§3.15), but it arrives on **four** channels, and
+the harness already has one function that stitches them:
+
+```python
+from ._v7.probe_hints import _enemy_probe_cells
+```
+
+  * `competitor_intel.new_this_day` with kind `enemy_probe_launch`
+  * `competitor_intel.persistent_echoes`
+  * `world.echo` rows with `via='probe_launch'`
+  * `entities.echoes`
+
+`weapon_forge.rival_eyes()` wraps it. **Use it. Never read a probe key directly.**
+
+The general rule, which has now been paid for six times over: *dump the view and
+look, or call the baseline's own extractor.* Reasoning from one plausible line of
+source is how you get a play that looks perfect and does nothing. The same
+mistake in a different costume:
+
+| Wrong belief | Reality |
+| --- | --- |
+| `enemy_probes` / `rival_probes` hold rival eyes | neither key exists; use `rival_eyes()` |
+| `pure_cells` is stripped, so pures are invisible | a pure is a `red_tiles` row at `purity >= 255`, visible in live vision |
+| a redsign region carries `x`/`y` | it carries `center` as a **list** |
+| `yield_breakdown` returns `red`/`value`/`total` | it returns `red_pts` |
+| the replay frame for a snap is `snap` | it is `snap_launch`, same as the wire verb |
+
+Every one of those produced a silent zero, never an exception.
+
+The sixth cause is the one that is easiest to misdiagnose as the fifth, and the
+tell is specific: **read what the agent said.** "Lost the argument" sounds like a
 trade-off — *"the grab banks more tonight"*. Contradiction sounds like a false
 belief about mechanics — *"their H1 drop still lands"*, when cancelling their H1
 action is precisely what the weapon does.
@@ -85,7 +133,7 @@ loop is far faster than tuning numbers.
 **never afforded** — the rack is empty all season. This is `orbit_policy.py` and
 the blue gates, and it is outside the four-rung ladder entirely, which is why it
 gets missed. A recorded case: orbit blocked at `blue 50/200` six times while the
-seat sat on 1000+ credits. See `references/blue-economy.md` — but only after the
+seat sat on 1000+ credits. See `references/blue-and-buying.md` — but only after the
 weapon fires, because funding a rack you cannot use is strictly worse than not
 funding it.
 

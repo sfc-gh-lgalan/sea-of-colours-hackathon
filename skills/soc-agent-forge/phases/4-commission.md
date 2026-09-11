@@ -24,6 +24,14 @@ python run_web.py                    # then open /lab
 
 Pick the board that matches the play's `when`:
 
+**SNAP CANNOT BE ARMED IN THE LAB.** Three layers stop at emp and chaff:
+`ladder.LOADOUTS` offers only `empty · chaff · emp · both`, `stage.py` calls
+`give_weapon_stock(emp=…, chaff=…)`, and `builder.py` has no `snap` parameter at
+all. Adding it means editing three SHARED files outside any harness, which would
+block `soc push` for whoever did it. So a snap play can only be proven in a live
+season, where the orbital buys it via the procurement hook — the lab will report
+an unarmed seat, which looks identical to a broken build.
+
 | `when` | board |
 | --- | --- |
 | `no_redsign` | **`plain_night_armed`** — day 4, no redsign, no pure, rack loaded |

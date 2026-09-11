@@ -104,10 +104,24 @@ grep -rn "<PROPOSED_NAME>" sea_of_colours/orchestrator_2/harnesses/<label>/
 
 | Choice | Means |
 | --- | --- |
-| `always` | every night we hold the weapon |
+| `always` | every night we hold the weapon — right when `targets` is the real gate |
 | `redsign_mine` | a pure **we** found is live — we are defending it |
+| `no_redsign` | no pure is lit anywhere — see the warning below before using this |
 | `redsign_theirs` | a pure a **rival** found is live — we are attacking it |
 | `other` | a custom predicate, which you write |
+
+> **Do not reach for `no_redsign` to give the agent "something to do on a quiet
+> night."** This row used to read *"good for pre-emptive strikes on vision"* and
+> that advice produced two bad plays in three agents. A quiet night has no pure
+> lit, so there is nothing concrete to deny: the play can name no target and
+> quote no number, and the model correctly refuses it. Measured: one such chaff
+> play was offered 10 times in a single season and chosen 0 times, while taking
+> up menu space beside the play that mattered.
+>
+> A weapon's case is a specific board fact, not an empty calendar. If you cannot
+> name what a play denies, it is not a play. Prefer `when="always"` with a
+> `targets` mode that refuses on its own when the board does not offer the
+> shape — that way the option disappears honestly instead of arguing weakly.
 
 ### HOUR — which slot it takes
 
@@ -127,6 +141,59 @@ This is the field that stops a weapon option being an orphan with invented
 coordinates. `CANCEL_SMASH` combines with `blind_grab` and takes that pattern's
 wave-1 drop cell and comb path, so the landing after the flare is real ground the
 harness already computed.
+
+### TARGETS — where the aim points come from
+
+The most under-used field, and it was undocumented until a play shipped dead
+because of it. `combines_with` supplies *geometry*; `targets` decides *what the
+warhead points at*, and for a snap or an EMP that is the whole play.
+
+| Choice | Aims at | Refuses when |
+| --- | --- | --- |
+| `pattern` | the seam pattern's wave-1 drop (default) | no pattern matches `when` |
+| `rival_probes` | the freshest rival eyes, as a salvo | fewer real eyes than `min_targets` |
+| `redsign` | the rival smear, plus a comb of what you did not darken | the smear is yours, or empty |
+| `finder_probe` | the ONE eye lighting a rival's beacon | 2+ eyes cover it and you cannot see the pure |
+| `contested_pure` | a pure **you can see** that a rival eye also covers | nothing is contested |
+
+**`contested_pure` is the strong snap target and the reasoning generalises.** A
+snap makes one cell hot for one hour, so it only pays if you know where they will
+be. You cannot predict a step, a probe or a pickup — but you *can* predict a
+pure, because it is the one square worth a smash-and-grab. So work backwards from
+the ground, not from their units: find the pures in your own live vision, then ask
+which of them a rival can also see. An enemy probe within vision range of a pure
+you hold means they have the read, whether or not anyone lit a beacon.
+
+You **can** see a pure. The seat view strips `pure_cells`, but a pure is a
+`red_tiles` row at `purity >= 255`, and those arrive wherever you have live
+vision. Concluding otherwise from the stripped key costs you this entire class of
+play — it is the single most expensive wrong belief in this skill's history.
+
+The cell is hot for you too, but only for that hour: fire at H1 and the landing
+queued behind it arrives at H2 on ground gone cold. Their smash-and-grab is
+refused and the hull damaged; you take the pure one hour later for 100 blue.
+
+> Add a mode to `TARGETS_CHOICES` **and** to the dispatch tuple in
+> `_aim_points`, or it is dead on arrival. `finder_probe` was handled inside that
+> block but missing from the tuple, so it never entered: the play fell through to
+> the pattern path, borrowed seam geometry, and looked healthy for weeks. Nothing
+> raised, nothing logged. `validate()` now rejects an unknown mode for this
+> reason.
+
+### TAKE THE GROUND — almost always no
+
+`take_the_ground=False` is the default and most plays should keep it. **A weapon
+play buys an HOUR; it should rarely buy anything else.** Leave the walk-in to the
+grab option the thinker picks alongside it, whose landing and comb `seam_control`
+computes properly.
+
+When a weapon play carries its own comb *and* a grab option is chosen too, the two
+half-own the follow-up and neither runs it: the flare fires, the probes go out, and
+the harvester never deploys. Only turn it on when the follow-up is *defined by* the
+shot — an EMP whose own cloud decides which cells are walkable, or a snap whose
+one-hour window is the timing of the landing. Never for chaff, which takes no cell.
+
+`probe_the_comb` requires it, and the validator says so.
 
 ### WHY — one sentence, theirs
 
@@ -173,27 +240,9 @@ That output comes from `weapon_forge.economy_summary()`. Read it back verbatim.
 - **`seek_blue_when_rack_empty=True`** — the stock gate asks whether the *vault*
   is short, which is the wrong question: a "medium" vault can hold 150 and still
   be 150 short of a charge. This also asks whether the rack can fire.
-- **`require_spare_harvester=True`** — keep it. Sending your only unit to fetch
-  currency loses more than the weapon gains.
-
-**Only ask if they want something non-default:**
-
-- `hold_at={"chaff": 1}` — cap the rack. Worth it when a second charge cannot be
-  fired the same night and 300 more blue is a harvester's worth of scoring.
-- `seek_blue_when_rack_empty=False` — revert to baseline behaviour.
-
-One thing deliberately **not** offered: lowering `value_pyramid._BLUE_GRAB_MIN`
-(192). Its own comment says it "matches the sanitizer's blue-loot floor", and
-that floor is `_BLUE_LOOT_MIN = 192` in **frozen `_v7/move_sanitizer.py`** which a
-test pins. Lower one without the other and the menu offers blue the sanitizer
-reroutes around — an option that appears, gets picked, and quietly becomes a
-different move. 192+ funds a 300-blue charge comfortably.
-
-Deeper background in `references/blue-and-buying.md` — the five gates, the dials,
-and the four buy-cadence policies. Open it only if a team wants to go past the
-declaration.
-
-## Gate
-
-A filled `WeaponPlay` per move — name, weapon, when, hour, combines_with, why —
-and the team can state each doctrine in one sentence. Then `phases/2-generate.md`.
+- **The last harvester is never diverted.** There is deliberately no flag for
+  this — the baseline's own `blue_is_requested` ends with
+  `len(harvesters) >= 2`, and that check runs downstream of everything the forge
+  does. A flag would have been a knob that could not be turned off, which is
+  worse than no knob. Sending your only unit to fetch currency loses more than
+  the weapon gains, so this is the right default to be stuck with.

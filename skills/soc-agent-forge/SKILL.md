@@ -94,7 +94,7 @@ let a team lose ten minutes to it.)
 `emp_harvest_test` is ~2,550 lines across 11 files — the *maximal* example, with
 two weapons, five named plays and compound seam patterns. Hand-wiring one
 compound play across six files was measured at **7m42s** and introduced two
-bugs. So Phase 2 installs a forge once — **0.24s, ten one-line hooks** — after
+bugs. So Phase 2 installs a forge once — **0.24s, seventeen one-line hooks across seven files** — after
 which a weapon is one dataclass in one file:
 
 ```python
@@ -189,11 +189,16 @@ Load on demand — do not read these up front.
 - `references/v12-vocabulary.md` — **read before naming a move.** All 18 named
   seam patterns and 8 numbered families your move is printed beside, and why a
   rationale must name a competitor that is really on tonight's menu
+- `references/weapons-that-fire.md` — **read before writing a play.** The three
+  verified recipes (chaff/emp/snap) observed launching on the wire, copyable as
+  shapes, plus the four bugs that silently stopped all of them and the lab
+  commands that prove a fire
 - `references/archetypes.md` — the three weapons on both cost axes, and the five
   plays worth arguing about
 - `references/doctrine-conflicts.md` — **read this when a wired weapon refuses.**
   The `BEWARE_*` suppressors and the correction each weapon must ship
-- `references/diagnosis.md` — symptom → cause → fix site, six causes
+- `references/diagnosis.md` — symptom → cause → fix site, seven causes, including
+  the one that cost the most: a plausible view key is not a channel
 - `references/verification-ladder.md` — the six test surfaces, cheapest first
 - `references/minimal-weapon.md` — the measured V12→fork diff, and the six edit
   sites the forge automates (useful when hand-wiring, or when debugging a hook)

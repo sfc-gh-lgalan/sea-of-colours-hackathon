@@ -198,7 +198,7 @@ rather than hidden.
 Stop editing earlier than feels comfortable. The last hour is verification.
 
 ```bash
-python scripts/soc.py doctor        # remote right? credentials present?
+python scripts/soc.py doctor        # remote right? does the model answer?
 python scripts/soc.py list          # agent still discovered?
 python scripts/soc.py push --dry-run    # nothing stray outside the folder?
 python scripts/soc.py season --p1 <label> --p2 tabula_v12 --days 3
