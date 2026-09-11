@@ -649,6 +649,38 @@ def cmd_lab(args) -> int:
 # ── doctor ──────────────────────────────────────────────────────────
 
 
+def _llm_answers_a_real_call() -> tuple[bool, str]:
+    """Send the smallest possible prompt and see if a reply comes back.
+
+    Deliberately uses the same invoker and model a real seat uses, because
+    the failure this exists to catch — a PAT that resolves but is expired,
+    revoked or scoped to another account — is invisible to every check that
+    stops at "a token is configured".
+
+    Returns ``(ok, detail)``; ``detail`` is a timing on success and the
+    provider's own complaint on failure. Never raises: doctor must survive
+    a machine with no network at all.
+    """
+    try:
+        from sea_of_colours.orchestrator_2.cortex_chat import CortexChatInvoker
+        from sea_of_colours.orchestrator_2.harnesses.tabula_v12.harness import (
+            _THINKER_CHAT_MODEL as model,
+        )
+
+        res = CortexChatInvoker(
+            model=model, response_format=None, max_completion_tokens=16,
+        ).invoke("Reply with exactly: OK", wallclock_cap_s=20)
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must not crash
+        return False, f"the call raised {type(exc).__name__}: {exc}"[:300]
+
+    if res.get("ok"):
+        return True, f"{model} answered in {int(res.get('elapsed_ms') or 0)}ms"
+    # Providers return pretty-printed JSON; on one line it stays scannable and
+    # keeps the PROBLEMS list readable when several things are wrong at once.
+    err = " ".join(str(res.get("error") or "").split()) or "no reason given"
+    return False, f"{model}: {err}"[:300]
+
+
 def cmd_doctor(args) -> int:
     """Check the kit is sound before blaming your agent."""
     from sea_of_colours.orchestrator_2 import agent_manifest
@@ -691,10 +723,36 @@ def cmd_doctor(args) -> int:
         ready, missing = credentials_status()
     except Exception as exc:
         ready, missing = False, f"could not be checked ({exc})"
-    print(f"  LLM credentials  {'present' if ready else 'absent'}"
-          f"{'' if ready else '  (heuristic agents still run)'}")
-    if not ready and missing:
-        print(f"                   needs {missing}")
+
+    if not ready:
+        print("  LLM credentials  absent  (heuristic agents still run)")
+        if missing:
+            print(f"                   needs {missing}")
+    elif args.no_llm_call:
+        print("  LLM credentials  a token exists  (--no-llm-call: NOT verified)")
+    else:
+        # v1.48 — a token EXISTING is not the same as a token WORKING, and
+        # reporting "present" for the first while meaning the second is worse
+        # than not checking at all: this is the command you run when your
+        # agent will not think, and it actively sent people away from the
+        # bug. An expired or wrong-account PAT fails in ~130ms with HTTP 401,
+        # the seat falls back to the heuristic, the heuristic passes the
+        # night, and a passing agent never harvests or fires — which looks
+        # like a broken agent, not a broken credential. Only a real call can
+        # tell those apart, so doctor now makes one.
+        ok, detail = _llm_answers_a_real_call()
+        if ok:
+            print(f"  LLM credentials  working  ({detail})")
+        else:
+            print("  LLM credentials  REFUSED — a token exists but the model "
+                  "will not answer")
+            print(f"                   {detail}")
+            problems.append(
+                "the LLM credential is present but refused: " + detail
+                + ". An LLM seat will silently fall back to the built-in "
+                  "heuristic, which passes the night — so this looks like a "
+                  "broken agent, not a broken token."
+            )
 
     # Checked here as well as in `soc push` because the whole value is in
     # finding out at 09:30 rather than at 16:45. Nothing about a wrong
@@ -1373,8 +1431,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("lab", help="frozen turns to test your fork on (start here)"
                    ).set_defaults(fn=cmd_lab)
-    sub.add_parser("doctor", help="check the kit before blaming your agent"
-                   ).set_defaults(fn=cmd_doctor)
+    dr = sub.add_parser("doctor",
+                        help="check the kit before blaming your agent")
+    dr.add_argument(
+        "--no-llm-call", action="store_true",
+        help="skip the live model call (offline, or you do not want to spend "
+             "a token on a check)",
+    )
+    dr.set_defaults(fn=cmd_doctor)
 
     wp = sub.add_parser("weapons",
                         help="which firing rung is your agent stuck on?")

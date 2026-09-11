@@ -336,9 +336,18 @@
 <span class="o">  backend          memory</span>
 <span class="o">  agents found     1 discovered, 5 routable</span>
 <span class="o">  snowflake conn   ~/.snowflake/connections.toml [soc]</span>
-<span class="o">  LLM credentials  </span><span class="pass">present</span>
+<span class="o">  LLM credentials  </span><span class="pass">working</span><span class="o">  (claude-haiku-4-5 answered in 1867ms)</span>
 <span class="o">  No problems found.</span></pre>
         </div>
+        <p>
+          Since v1.48 that last line means the model <b>actually answered</b> &mdash;
+          doctor sends one tiny prompt and waits. It used to say <code>present</code>
+          for any token that merely existed, which passed an expired or
+          wrong-account PAT. That matters because a seat with a dead credential
+          falls back to the heuristic <i>silently</i>, and the heuristic passes the
+          night: what you see is an agent that never harvests, not an error.
+          Use <code>--no-llm-call</code> to skip the call when offline.
+        </p>
 
         <h3>How much Snowflake does your team actually need?</h3>
         <p>Less than people assume. Getting this right saves a morning.</p>

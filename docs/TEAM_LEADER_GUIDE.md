@@ -69,14 +69,23 @@ the exact Snowflake connection file and section it resolved:
 
 ```
   snowflake conn   /Users/you/.snowflake/connections.toml [soc]
-  LLM credentials  present
+  LLM credentials  working  (claude-haiku-4-5 answered in 1867ms)
 ```
+
+Since v1.48 that last line means the model **actually answered**, not that a
+token was found. Doctor sends one tiny prompt and waits. It used to report
+`present` for any token that existed, which passed an expired or
+wrong-account PAT — and since a seat with a dead credential silently falls
+back to the heuristic, and the heuristic passes the night, the symptom is an
+agent that never harvests rather than an error anyone can see. If you are
+offline or would rather not spend the call, `--no-llm-call` skips it and
+says so.
 
 There is also `python scripts/quickstart_check.py`, which checks the base
 install offline. Nothing it reports as *skip* is required to play — only
 the base install can actually fail it.
 
-**Checkpoint.** `No problems found`, and `LLM credentials present` for
+**Checkpoint.** `No problems found`, and `LLM credentials working` for
 anyone who will run an LLM agent. Credentials come from the standard
 Snowflake connection store, so most people who have used the Snowflake
 CLI or Cortex Code are already configured — see
