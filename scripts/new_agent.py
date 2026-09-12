@@ -89,6 +89,35 @@ _FORK_README_BANNER = """\
 """
 
 
+# v1.48 — a fork arms itself; stock V12 does not.
+#
+# V12's orbit.py passes ``weapons_enabled=False`` (see the v14 note there),
+# which is right for the baseline: it has no night-phase play that fires a
+# charge, so ordnance costs it a probe and scores nothing. But the mint is
+# a wholesale copy, so a fork inherited that off-switch and bought nothing
+# all game — silently, because the descriptor explaining the skipped
+# purchase is gated on the same flag. Eighteen agent-seasons went by
+# without a shot before anyone noticed.
+#
+# Keyed to the call line rather than the comment block above it, which is
+# prose and will be reworded. If even this stops matching, the mint fails
+# loudly (``_ARMED_CHECK`` below) — the one outcome worth ruling out is
+# handing someone an agent that can never arm and never says so.
+_V12_DISARM = (
+    "        actions, rationale = plan_orbit_actions("
+    "agent_view, weapons_enabled=False)"
+)
+_FORK_ARM = """\
+        # Stock V12 passes ``weapons_enabled=False`` here, and the comment
+        # above explains why: with no play that fires a charge, ordnance
+        # costs it a probe and scores nothing. Your fork is a different
+        # proposition — "buy an EMP on day one" is the exercise — so the
+        # mint turns the switch back on. Set it to False again if you would
+        # rather spend the credits on vision. Just make that your decision
+        # rather than something you inherited without being told.
+        actions, rationale = plan_orbit_actions(agent_view)"""
+
+
 def _copy_harness(dest: Path, label: str, *, dry_run: bool) -> int:
     """Copy V12 and repoint its self-imports at the new package."""
     files = [
@@ -120,8 +149,28 @@ def _copy_harness(dest: Path, label: str, *, dry_run: bool) -> int:
         text = text.replace(_SOURCE_NAME.upper(), label.upper())
         if rel.name == "README.md":
             text = _FORK_README_BANNER.format(label=label.upper()) + text
+        if rel.name == "orbit.py":
+            text = text.replace(_V12_DISARM, _FORK_ARM)
         out.write_text(text, encoding="utf-8")
     return len(files)
+
+
+def _check_armable() -> None:
+    """Fail before anything is written, not halfway through.
+
+    Runs with the other pre-flight checks so a source V12 this script can
+    no longer arm is caught while the mint is still a no-op.
+    """
+    text = (_SOURCE / "orbit.py").read_text(encoding="utf-8")
+    if _V12_DISARM in text:
+        return
+    if "weapons_enabled=False" in text:
+        _die(
+            "cannot arm the fork: tabula_v12/orbit.py disables weapon "
+            "buying on a line this script no longer recognises. Update "
+            "_V12_DISARM in scripts/new_agent.py — a fork that silently "
+            "cannot buy a weapon cannot do the exercise."
+        )
 
 
 def _check_registrable(label: str) -> None:
@@ -229,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     # Every check that can fail runs before the first file is written, so
     # a rejected name never leaves a half-copied package behind.
     _check_registrable(label)
+    _check_armable()
 
     n = _copy_harness(dest, label, dry_run=args.dry_run)
     try:

@@ -2673,3 +2673,44 @@ duel_s4001 night in miniature, which returns `{}` against the old filter.
 both remain near the top; the agent is now told they collide rather than
 prevented from taking both. Re-pricing the remaining options after each
 selection is the larger fix, and wants its own issue.
+
+---
+
+## 55. ✅ (DONE, v1.48) Every freshly minted fork inherited V12's disarm and never bought a weapon
+
+**Status (v1.48):** Fixed in `scripts/new_agent.py`. The mint now arms the
+copy; the baseline is left disarmed.
+
+**Root cause:** V12's `orbit.py` passes `weapons_enabled=False` to
+`plan_orbit_actions`, which is correct for the baseline — it has no
+night-phase play that fires a charge, so ordnance costs it a probe
+(`game/weapons.py` prices an EMP and a SNAP at 250 credits,
+`game/session.py` prices a PROBE at the same) and scores nothing, since a
+charge left in the rack at settlement is worth zero.
+
+But `scripts/new_agent.py` copies the harness wholesale, so every fork
+minted after that change inherited the off-switch, skipped orbit priority
+3 and finished whole seasons with an empty rack. Two things made it hard
+to see. It is **silent** — the descriptor that would have said "did not
+buy" is gated on the same flag, so the seat neither armed nor explained
+itself. And `skills/soc-agent-forge/scripts/check_wiring.py` calls
+`plan_orbit_actions(view, weapons_enabled=True)`, so the wiring rung
+"orbital can buy snap" passed against a path the real agent never takes.
+Eighteen agent-seasons went by without a shot.
+
+**Fix:**
+- `_copy_harness` rewrites the minted `orbit.py` to call the planner
+  armed, with a comment telling the fork's owner it may set it back.
+- `_check_armable` runs with the other pre-flight checks, so a V12 whose
+  disarm line has been reworded fails the mint loudly instead of quietly
+  producing an agent that can never arm.
+
+**Tests:** `test_a_minted_fork_can_buy_weapons` mints for real and asserts
+the copy is armed and `tabula_v12/orbit.py` is untouched. Pinned on the
+output of a mint rather than on the script's source, because the intent
+was never wrong — nothing checked what the copy came out as.
+
+**Not fixed here.** `check_wiring.py` still hardcodes
+`weapons_enabled=True`, so it continues to report green on a fork that
+cannot arm in play. It no longer hides *this* bug, but it is the same
+false green and wants its own fix.

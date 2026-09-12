@@ -14,6 +14,7 @@ would mutate the repo mid-suite, and the interesting failure modes
 from __future__ import annotations
 
 import os
+import shutil
 
 os.environ.setdefault("SOC_BACKEND", "memory")
 
@@ -222,4 +223,46 @@ def test_a_forks_tests_stay_inside_the_fork() -> None:
     assert not strays, (
         "these live in the shared suite but import a fork directly; move "
         f"them into that fork's own directory: {strays}"
+    )
+
+
+def test_a_minted_fork_can_buy_weapons() -> None:
+    """The mint arms the fork, whatever the baseline does (v1.48).
+
+    V12 passes ``weapons_enabled=False`` to its orbital planner, which is
+    right for the baseline and wrong for everyone downstream of it: the
+    mint is a wholesale copy, so forks inherited the off-switch, skipped
+    weapon purchase for entire seasons and never said why — the
+    descriptor that would have explained it is gated on the same flag.
+
+    Pinned end to end on a real mint rather than by grepping the script,
+    because the failure was never in the intent. It was that nothing
+    checked what the copy came out as.
+    """
+    label = "unittest_armed"
+    dest = _HARNESSES / label
+    assert not dest.exists(), f"{label} left over from an earlier run"
+    baseline = _HARNESSES / "tabula_v12" / "orbit.py"
+    before = baseline.read_text(encoding="utf-8")
+    try:
+        r = _run("--team", "unittest", "--name", "armed")
+        assert r.returncode == 0, r.stderr
+
+        orbit = (dest / "orbit.py").read_text(encoding="utf-8")
+        assert "plan_orbit_actions(agent_view)" in orbit, (
+            "the minted fork does not call the orbital planner armed"
+        )
+        code = "\n".join(
+            line.split("#", 1)[0] for line in orbit.splitlines()
+        )
+        assert "weapons_enabled=False" not in code, (
+            "the minted fork still disables weapon buying"
+        )
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+
+    # The baseline is what forks are measured against, so arming the copy
+    # must not have been done by editing the original.
+    assert baseline.read_text(encoding="utf-8") == before, (
+        "minting modified tabula_v12/orbit.py"
     )
