@@ -94,7 +94,7 @@ let a team lose ten minutes to it.)
 `emp_harvest_test` is ~2,550 lines across 11 files — the *maximal* example, with
 two weapons, five named plays and compound seam patterns. Hand-wiring one
 compound play across six files was measured at **7m42s** and introduced two
-bugs. So Phase 2 installs a forge once — **0.24s, seventeen one-line hooks across seven files** — after
+bugs. So Phase 2 installs a forge once — **0.24s, eighteen one-line hooks across seven files** — after
 which a weapon is one dataclass in one file:
 
 ```python

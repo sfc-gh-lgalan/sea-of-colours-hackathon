@@ -14,7 +14,7 @@ python skills/soc-agent-forge/scripts/forge_install.py <label>          # dry ru
 python skills/soc-agent-forge/scripts/forge_install.py <label> --apply
 ```
 
-Measured at **0.24s**. It copies in two files and inserts seventeen one-line hooks
+Measured at **0.24s**. It copies in two files and inserts eighteen one-line hooks
 across seven:
 
 | File | Hook | Rung |

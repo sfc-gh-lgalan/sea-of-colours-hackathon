@@ -166,6 +166,30 @@ def hooks(pkg: str) -> List[Tuple[str, str, str, str]]:
             "DEFAULT_DIALS = weapon_forge.tune_dials(OrbitDials())",
             "replace",
         ),
+        # ── re-arm a fork that DECLARES weapon plays ───────────────────────
+        # V12 ships `orbit.py` calling `plan_orbit_actions(..., weapons_enabled=
+        # False)` — correct for V12, which has no night-phase weapon play and
+        # so must never spend a credit on a charge it will not fire. But a
+        # forge-minted agent COPIES that orbit.py, so it inherits the off-switch
+        # and buys nothing — the exact bug that left 18 agent-seasons unarmed.
+        # The honest signal is `weapon_plays.PLAYS`: a fork that declares plays
+        # wants the weapons those plays fire. Re-enable on that, so V12 stays
+        # disarmed and every forged agent arms itself. Placed right after
+        # `credits` is read, before priority 3 weighs any purchase.
+        (
+            "orbit_policy.py",
+            '    credits = int(orbit.get("credits", 0))',
+            '    credits = int(orbit.get("credits", 0))\n'
+            f"    {MARKER}\n"
+            "    if not weapons_enabled:\n"
+            "        try:\n"
+            "            from . import weapon_plays as _wp\n"
+            "            if getattr(_wp, \"PLAYS\", ()): \n"
+            "                weapons_enabled = True  # this fork fires weapons\n"
+            "        except Exception:\n"
+            "            pass",
+            "replace",
+        ),
         (
             "prompt.py",
             "    if not blue_vault_is_short(agent_view):",
@@ -422,6 +446,9 @@ _HOOK_SIGNATURES: List[Tuple[str, str, str]] = [
      "the buy dials — buy_asap and the stockpile caps are inert"),
     ("orbit_policy.py", "add_procurement",
      "PROCUREMENT — without it a snap play can NEVER arm"),
+    ("orbit_policy.py", "this fork fires weapons",
+     "the re-arm — V12's orbit.py passes weapons_enabled=False, which the "
+     "agent inherits; without this hook a forged agent buys NOTHING"),
     ("value_pyramid.py", "strong_chain_red_min",
      "the blue/red trade — declared but inert without it"),
 ]

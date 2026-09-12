@@ -161,9 +161,18 @@ class WeaponPlay:
     #: flare fired, the two probes went out, and the harvester NEVER DEPLOYED —
     #: the weapon and the grab each half-owned the follow-up and neither ran it.
     #:
-    #: Turn it on only when the take is the point of the shot rather than a bonus:
-    #: a snap that goes cold after one hour so the same cell is ours at H2, or an
-    #: EMP whose cloud defines which cells are still walkable.
+    #: Turn it on for ONE case only: an EMP, whose comb is the smear MINUS its
+    #: own blast. Friendly fire is on, so only the EMP play knows which cells its
+    #: three missiles darkened — a separately-chosen grab would walk into our own
+    #: cloud and be disabled hour by hour. That comb has to be self-contained.
+    #:
+    #: A SNAP NEVER TAKES ITS OWN GROUND. The snap owns the cell for exactly one
+    #: hour, so you PHYSICALLY cannot land on it until it goes cold at H2 — which
+    #: means the grab is a separate play the thinker picks alongside (name it in
+    #: ``combines_with``). Carrying your own harvester there just double-books the
+    #: cell against the paired grab and evicts the richer ring grab from the
+    #: two-harvester budget. Fire denial-only and name the pairing, like
+    #: ``CANCEL_DROP -> blind_grab``.
     take_the_ground: bool = False
 
     #: Refuse to fire below this many real aim points. A charge fires all its
@@ -278,7 +287,11 @@ _DENIAL_VALUE = {
         "SCORE THIS AS DENIAL, NOT YIELD. One charge darkens ~13 cells for "
         "EIGHT HOURS across 3 missiles. Probes inside are destroyed and "
         "harvesters disabled — you are removing their vision and their tempo "
-        "for most of the night, not banking points tonight"
+        "for most of the night, not banking points tonight. The follow-up comb "
+        "adapts to the smear: if enough of it sits OUTSIDE your own cloud, you "
+        "comb that exposed edge now; if not, you WAIT the eight hours out and "
+        "comb the interior once the cloud clears — ground nobody else could "
+        "enter while it burned, so it is yours unopposed at hour nine"
     ),
     "snap": (
         "SCORE THIS AS A LANDING REFUSED, NOT AS VISION DENIED. A snap makes "
@@ -288,18 +301,38 @@ _DENIAL_VALUE = {
         "one unit, so it also catches anything that ARRIVES during the hour, and "
         "it catches EVERY seat that comes, not just one. And it resolves ABOVE "
         "the hour-start vision snapshot, so it can deny the very drop its target "
-        "beacon was validating — an EMP resolves below and never can. "
-        "So aim it at GROUND THEY WANT, not at their eye. The only cell whose "
-        "occupation you can actually PREDICT is a pure: it is the one square on "
-        "the board worth a smash-and-grab, so that is where they land. You CAN "
-        "see a pure — the seat view strips `pure_cells`, but a pure is a "
-        "`red_tiles` row at purity 255 and you see those wherever you have live "
-        "vision. A pure you can see that a rival probe also covers is therefore "
-        "a READ, not a guess. The cell is hot for YOU too, but only for that one "
-        "hour: fire at H1 and the landing you queue behind it arrives at H2 on "
-        "ground that has gone cold again. Their smash-and-grab is refused, and "
-        "you take the pure one hour later for 100 blue — the cheapest ordnance "
-        "there is"
+        "beacon was validating — an EMP resolves below and never can."
+    ),
+}
+
+#: Target-specific override for the denial line. A snap aimed at a contested
+#: pure and a snap aimed at a finder eye are DIFFERENT plays that happen to
+#: share a verb, and the argument for each contradicts the other — "aim at the
+#: ground, not the eye" is right for one and sabotage for the other. Keyed by
+#: (weapon, targets); falls back to `_DENIAL_VALUE[weapon]` when absent.
+_DENIAL_VALUE_BY_TARGET: Dict[Tuple[str, str], str] = {
+    ("snap", "contested_pure"): (
+        _DENIAL_VALUE["snap"] + " AIM AT THE GROUND THEY WANT. The one cell "
+        "whose occupation you can PREDICT is a pure — the square worth a "
+        "smash-and-grab, so that is where they land. You CAN see it: a pure is a "
+        "`red_tiles` row at purity 255, and one a rival probe also covers is a "
+        "READ, not a guess. The cell is hot for YOU too, but only that hour, so "
+        "you PHYSICALLY cannot land on your own snap at H1. This play fires "
+        "DENIAL-ONLY: pair it with exactly ONE grab (SMASH_GRAB / GRAB1) and "
+        "that grab lands on the cold pure at H2 for 100 blue. Do NOT make the "
+        "snap take its own ground and do NOT stack a second grab on the cell — "
+        "either one double-books it and the later drop hits stripped green."
+    ),
+    ("snap", "finder_probe"): (
+        _DENIAL_VALUE["snap"] + " HERE THE PURE IS FOGGED TO YOU, so aim at the "
+        "one thing you CAN hit: the probe that found it. Killing the SOLE finder "
+        "refuses their drop for lack of live vision THIS night (§3.9.7) — the "
+        "same thing a 300-blue chaff buys, for 100. This is not the pure-square "
+        "play; you cannot see the square, so do NOT wait for a pure you will "
+        "never be shown. The rival's redsign tells you the seam is live and the "
+        "finder's disk tells you which eye holds it. Fire DENIAL-ONLY and pair a "
+        "blind-grab: its probe relights the seam and it combs the smear they are "
+        "locked out of — this play carries no harvester of its own."
     ),
 }
 
@@ -496,7 +529,11 @@ def compose_rationale(p: "WeaponPlay",
         # No "WHY:" prefix — agency.py:1373 already prints one, and the menu
         # was rendering "WHY: WHY: ...".
         f"{p.why.strip().rstrip('.')}.",
-        _DENIAL_VALUE.get(p.weapon, ""),
+        # Target-specific denial line wins over the weapon default: a snap on a
+        # pure and a snap on an eye argue for opposite aims, so the wrong one
+        # tells the model not to take the play it is looking at.
+        _DENIAL_VALUE_BY_TARGET.get((p.weapon, p.targets))
+        or _DENIAL_VALUE.get(p.weapon, ""),
     ]
     parts.append(_VS_SUPERSEDE.get(p.weapon, ""))
     if p.when in ("redsign_theirs", "always"):
@@ -600,14 +637,20 @@ def _aim_points(
     p: "WeaponPlay",
     agent_view: Mapping[str, Any],
     seam_patterns: Sequence[Any],
-) -> Tuple[List[Cell], List[Cell], List[str]]:
-    """(aim cells, comb path, notes) for a play. Empty aim means do not offer.
+) -> Tuple[List[Cell], List[Cell], List[str], Dict[str, Any]]:
+    """``(aim cells, comb path, notes, extras)`` for a play.
+
+    Empty ``aim`` means do not offer. ``extras`` carries anything the packer
+    needs beyond geometry — currently only ``wait_before_drop``, an int number
+    of extra ``wait`` moves the packer inserts between the launch and the
+    landing. Zero on every path except LIGHTS_DOWN's delayed-comb branch.
 
     ``scorch`` is imported lazily and optionally: a fork that never needed EMP
     geometry does not carry it, and a missing module should degrade to the
     pattern path rather than crash the night.
     """
     notes: List[str] = []
+    extras: Dict[str, Any] = {}
 
     # NOTE the membership test. `finder_probe` was handled inside this block but
     # missing from the tuple, so it never entered it: the play fell through to
@@ -625,17 +668,17 @@ def _aim_points(
                     f"{p.play_id}: {len(found)} contested pure(s), needs "
                     f"{p.min_targets} — holding the charge"
                 )
-                return [], [], notes
+                return [], [], notes, extras
             cell, n_eyes = found[0]
             ok, why = contested_pure_gate(n_eyes)
             notes.append(why)
             if not ok:
-                return [], [], notes
+                return [], [], notes, extras
             # Aim AT the pure, then take it. The snap is hot for ONE hour and
             # is hot for US too, so the drop cannot share the hour — but the
             # packer queues the comb after the launch, which puts the landing at
             # H2 with the cell already cold again. Fire at H1, own it at H2.
-            return [cell], [cell], notes
+            return [cell], [cell], notes, extras
 
         try:
             from . import scorch
@@ -644,20 +687,34 @@ def _aim_points(
                 f"{p.play_id}: needs scorch.py for targets={p.targets!r} and it "
                 "is not in this fork"
             )
-            return [], [], notes
+            return [], [], notes, extras
         missiles = max(1, p.aims_at_cells)
         if p.targets == "finder_probe":
-            probes, pure, _n = finder_probes(agent_view)
+            probes, pure, region, _n = finder_probes(agent_view)
             notes.extend(_n)
             if not probes:
-                return [], [], notes
+                return [], [], notes, extras
             ok, why = finder_gate(len(probes), pure is not None)
             notes.append(why)
             if not ok:
-                return [], [], notes
+                return [], [], notes, extras
             aim = [probes[0]]                      # the freshest covering eye
+            # If the play asked to TAKE the smear it just blinded, plan a comb
+            # across the region. Snap is 1 cell for 1 hour, so from H2 onward
+            # the whole smear is cool — nothing to avoid. Plain plan_comb.
+            if p.take_the_ground and region is not None:
+                smear = [c for c in (scorch._cell(c) for c in
+                                     (region.get("cells") or [])) if c]
+                plan = plan_comb(agent_view, value_cells=smear, avoid=set(),
+                                 max_steps=p.comb_max_steps)
+                notes.extend(plan["notes"])
+                drop = plan["drop_at"]
+                if drop is not None:
+                    return aim, [drop] + list(plan["walk"]), notes, extras
+                # Fell through: no legal drop cell inside the smear. Fall back
+                # to the pure if visible, else denial-only.
             comb = [pure] if pure else []
-            return aim, comb, notes
+            return aim, comb, notes, extras
 
         if p.targets == "rival_probes":
             real = rival_eyes(agent_view)
@@ -669,9 +726,9 @@ def _aim_points(
                     f"{p.play_id}: {len(real)} rival probe(s), needs "
                     f"{p.min_targets} — holding the charge"
                 )
-                return [], [], notes
+                return [], [], notes, extras
             aim, why = scorch.probe_targets(agent_view, real, missiles=missiles)
-            return list(aim), [], notes + list(why)
+            return list(aim), [], notes + list(why), extras
         # scorch.redsign_targets reads the rival smear off the view itself and
         # REFUSES an own redsign outright ("scorching a redsign you found
         # yourself denies your own harvesters the ground"), so the
@@ -681,35 +738,62 @@ def _aim_points(
                 agent_view, radius=scorch.RADIUS, missiles=missiles)
         except Exception as exc:                        # noqa: BLE001
             notes.append(f"{p.play_id}: redsign_targets refused ({exc})")
-            return [], [], notes
+            return [], [], notes, extras
         notes.extend(list(why or []))
         if not aim:
-            return [], [], notes
-        # The comb is the smear MINUS our own blast: ground worth walking that
-        # our charge did not just darken. Walking into our own cloud disables
-        # the harvester hour by hour — friendly fire is on.
+            return [], [], notes, extras
+        # Try the SAFE-EDGE path first: the smear MINUS our own blast, walked
+        # NOW while the cloud is still up. Friendly fire is on, so anything
+        # inside the cloud disables the harvester hour by hour — plan_comb
+        # avoids it.
         dark = scorch.blast(aim, scorch.RADIUS)
         smear = [c for c in (scorch._cell(c) for c in
                              ((region or {}).get("cells") or [])) if c]
-        # A filtered SET of walkable cells is not a PATH — plan_comb turns it
-        # into a contiguous serpentine that never enters our own cloud, and
-        # trims it to the move cap.
-        plan = plan_comb(agent_view, value_cells=smear, avoid=dark,
-                         max_steps=p.comb_max_steps)
-        notes.extend(plan["notes"])
-        drop = plan["drop_at"]
+        edge_plan = plan_comb(agent_view, value_cells=smear, avoid=dark,
+                              max_steps=p.comb_max_steps)
+        edge_walk = list(edge_plan.get("walk") or [])
+        edge_drop = edge_plan.get("drop_at")
+        # A "walk" of length 1 is just the drop cell — no steps banked. On a
+        # small smear the safe edge is empty or trivial, so this switches to
+        # the INTERIOR comb after the 8h cloud clears. Ground nobody else could
+        # enter while we waited becomes ours at H9, unopposed.
+        if edge_drop is not None and len(edge_walk) >= _MIN_EXPOSED_EDGE:
+            notes.extend(edge_plan["notes"])
+            return list(aim), [edge_drop] + edge_walk, notes, extras
+        interior = plan_comb(agent_view, value_cells=smear, avoid=set(),
+                             max_steps=p.comb_max_steps)
+        notes.extend(interior["notes"])
+        drop = interior["drop_at"]
         if drop is None:
-            return [], [], notes
-        comb = [drop] + list(plan["walk"])
-        return list(aim), comb, notes
+            return [], [], notes, extras
+        # Wait through the cloud, then land on the interior. Fired at H1 the
+        # cloud runs H1-H8; H9 is the first cool hour, which is where the
+        # drop must land or the engine refuses it as landing into live cloud.
+        try:
+            from sea_of_colours.game.weapons import EMP_CLOUD_HOURS as _CH
+        except Exception:                                       # noqa: BLE001
+            _CH = 8
+        # Hours from move indices: index i is hour i+1. Sequence is launch
+        # (index 0 = H1), then wait_n waits, then the drop. The interior comb
+        # sits ENTIRELY inside the blast, so `probe_the_comb` finds nowhere
+        # legal to place a covering probe and none is emitted — the drop is the
+        # move right after the waits. For the drop to land at H(_CH+1):
+        #   1 (launch) + wait_n + 1 (drop) = _CH + 1  ->  wait_n = _CH - 1
+        wait_n = max(0, _CH - 1)
+        extras["wait_before_drop"] = wait_n
+        notes.append(
+            f"{p.play_id}: safe-edge comb only {len(edge_walk)} cell(s) — waiting "
+            f"{wait_n}h for the cloud to clear and combing the interior instead"
+        )
+        return list(aim), [drop] + list(interior["walk"]), notes, extras
 
     # default: borrow the pattern's wave-1 geometry
     for pat in seam_patterns or []:
         if _when_holds_any(p, _redsign_states(agent_view, [pat])):
             target, comb = _pattern_targets(p, pat)
             if target is not None:
-                return [target], comb, notes
-    return [], [], notes
+                return [target], comb, notes, extras
+    return [], [], notes, extras
 
 
 # ── option building (the agency.py hook calls this) ────────────────────────
@@ -749,13 +833,14 @@ def build_options(
         aim: List[Cell] = []
         comb: List[Cell] = []
         probe_at: Optional[Cell] = None
+        extras: Dict[str, Any] = {}
 
         if p.when == "other" and p.trigger is not None:
             aim = list(p.trigger(agent_view) or ())
         else:
             if not _when_holds_any(p, states):
                 continue
-            aim, comb, _notes = _aim_points(p, agent_view, seam_patterns)
+            aim, comb, _notes, extras = _aim_points(p, agent_view, seam_patterns)
             # DENIAL-ONLY unless the play explicitly asked for the ground. The
             # resolver computes a comb either way (a pattern play gets one for
             # free from the seam geometry), so this is where it gets dropped —
@@ -798,6 +883,10 @@ def build_options(
                 # count travels with the option. Same night, same number.
                 "stock": _stock(agent_view, p.weapon),
                 "aims_at_cells": p.aims_at_cells,
+                # Extra waits between the launch and the landing. Non-zero only
+                # on LIGHTS_DOWN's delayed-comb path, where the harvester holds
+                # off until the 8h cloud clears and then combs the interior.
+                "wait_before_drop": int(extras.get("wait_before_drop") or 0),
             },
             rationale=compose_rationale(p, menu_ids),
         )
@@ -992,6 +1081,12 @@ _PROBE_VISION_R = 4          # Euclidean disk, matches scorch.probe_vision_radiu
 #: is a wrong turn that costs a whole class of snap play.
 _PURE_MIN = 255
 
+#: Below this many exposed-edge cells (smear MINUS our own blast), an EMP
+#: play switches from combing the safe edge tonight to WAITING for the cloud
+#: to clear and combing the interior at H9+. Four is roughly what a two-step
+#: chain banks; any less is a walk not worth an hour.
+_MIN_EXPOSED_EDGE = 4
+
 
 def rival_eyes(agent_view: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Known rival probe positions, freshest first. THE only correct source.
@@ -1046,13 +1141,16 @@ def rival_eyes(agent_view: Mapping[str, Any]) -> List[Dict[str, Any]]:
 
 def finder_probes(
     agent_view: Mapping[str, Any],
-) -> Tuple[List[Cell], Optional[Cell], List[str]]:
+) -> Tuple[List[Cell], Optional[Cell], Optional[Mapping[str, Any]], List[str]]:
     """Rival probes covering a RIVAL redsign's beacon, freshest first.
 
-    Returns ``(probes, pure_cell_or_None, notes)``. The second value is the
-    exact pure IF we can see it ourselves — a live `red_tiles` row at
-    ``purity >= 255`` inside the smear. Seeing it turns pure denial into
-    denial-plus-take, because we can then drop on it ourselves.
+    Returns ``(probes, pure_cell_or_None, region_or_None, notes)``. The second
+    value is the exact pure IF we can see it ourselves — a live ``red_tiles``
+    row at ``purity >= 255`` inside the smear. The third is the rival redsign
+    region itself, so a caller that wants to comb the smear after killing the
+    eye does not have to scan for the region a second time. Seeing the pure
+    turns pure denial into denial-plus-take, because we can then drop on it
+    ourselves.
     """
     notes: List[str] = []
     best: Optional[Tuple[List[Cell], Optional[Cell], int]] = None
@@ -1088,21 +1186,21 @@ def finder_probes(
                 pure = cell
                 break
 
-        cand = ([c for c, _ in covering], pure, len(covering))
-        if best is None or cand[2] < best[2]:      # fewest eyes = strongest
+        cand = ([c for c, _ in covering], pure, region, len(covering))
+        if best is None or cand[3] < best[3]:      # fewest eyes = strongest
             best = cand
 
     if best is None:
         notes.append("no rival probe is covering a rival beacon")
-        return [], None, notes
+        return [], None, None, notes
 
-    probes, pure, n = best
+    probes, pure, region, n = best
     notes.append(
         f"{n} rival probe(s) cover their beacon"
         + (f"; we SEE the pure at {list(pure)}" if pure else
            "; we cannot see the pure itself")
     )
-    return probes, pure, notes
+    return probes, pure, region, notes
 
 
 def finder_gate(n_covering: int, sees_pure: bool) -> Tuple[bool, str]:
@@ -1540,6 +1638,18 @@ def _pack_weapon(pk: Any, payload: Mapping[str, Any]) -> None:
     drop_at = payload.get("drop_at")
     if not comb or not drop_at:
         return                                     # denial-only play: done
+
+    # Delayed comb (LIGHTS_DOWN small-smear path): hold the harvester off until
+    # the cloud clears. The launch is already queued; insert N waits so the drop
+    # lands on the first cool hour. The probe (emitted next by emit_chain's
+    # caller below) then sits one hour before the drop, exactly where a covering
+    # probe belongs.
+    try:
+        wait_before = int(payload.get("wait_before_drop") or 0)
+    except (TypeError, ValueError):
+        wait_before = 0
+    for _ in range(max(0, wait_before)):
+        pk.moves.append({"a": "wait"})
 
     unit = pk.next_harvester()
     if unit is None:

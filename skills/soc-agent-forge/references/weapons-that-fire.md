@@ -34,16 +34,21 @@ the weapon play and the grab each half-owned the follow-up and neither ran it. W
 `take_the_ground=False` the same board gives the flare, the waits, and then the
 grab landing on the beacon centre: 60% → 80% of checks.
 
-Turn it on only when the follow-up is *defined by* the shot rather than merely
-enabled by it. Two legitimate cases, both below:
+Turn it on for **exactly one** case: an **EMP**, where the walkable cells are "the
+smear minus our own blast", and only this play knows where our missiles landed. A
+separate grab would route a harvester into our own cloud, and friendly fire disables
+it hour by hour, so that comb has to be self-contained.
 
-* **EMP** — the walkable cells are "the smear minus our own blast", and only this
-  play knows where our missiles landed. A separate grab would route a harvester
-  into our own cloud, and friendly fire disables it hour by hour.
-* **SNAP** — the cell is hot for one hour and hot for us too, so no separate option
-  can help: a landing at H1 is refused. The two-beat timing *is* the play.
+**A snap never takes its own ground.** The cell is hot for one hour — hot for *us*
+too — so you physically cannot land on your own snap at H1; the earliest a harvester
+touches it is H2 when it has gone cold. That means the grab is a *separate* play the
+thinker picks alongside the snap (name it in `combines_with`), landing at H2 by
+construction. Carrying your own harvester on the snap double-books the cell against
+that paired grab and evicts the richer ring grab from the two-harvester budget. Fire
+the snap denial-only and let the pairing land the take.
 
-Chaff is never one of those cases: it takes no cell, so it has nothing to hand on.
+Chaff is never one of those cases either: it takes no cell, so it has nothing to hand
+on.
 
 ---
 
@@ -91,34 +96,64 @@ WeaponPlay(
     hour="super_early",
     targets="redsign",
     probe_the_comb=True,
+    take_the_ground=True,
     combines_with="blind_grab",
     why=("covering their smear at H1 locks them out of their own pure for "
-         "eight hours; the probe outside the blast lights the walk so we "
-         "can comb the exposed edge while they wait the cloud out"),
+         "eight hours; then we comb the ground they cannot reach — the "
+         "exposed edge now, or the interior once our own cloud clears"),
 )
 ```
 
 Observed: `H1 emp_launch at [[17,10],[20,10],[18,7]]` — one move, one charge, a
 LIST of cells — then a probe just outside the cloud, then the drop and comb.
 
-Three things that are easy to get wrong here:
+**The comb adapts to the smear, and this is the part that was wrong before.** The
+cloud darkens ~13 cells and friendly fire is on, so the harvester cannot walk into
+it. Two cases:
+
+* **Big smear** — enough cells sit OUTSIDE the blast to comb ≥4 of them. Comb that
+  exposed edge now, while the cloud still locks the rival out of the middle.
+* **Small smear** — the blast covers most of it, so there is no worthwhile edge.
+  The play then WAITS the eight hours out and combs the INTERIOR at H9, the first
+  cool hour. Ground nobody else could enter while it burned is yours unopposed.
+  The packer inserts the `wait` moves automatically (`wait_before_drop`), so the
+  wire shows `emp_launch` at H1, seven `wait`s, then `drop` at H9.
+
+The switch is automatic — `_MIN_EXPOSED_EDGE = 4` in `weapon_forge.py` is the
+threshold. You do not choose it; the geometry does.
+
+Three things that are still easy to get wrong:
 
 * **A salvo is ONE move with a list of cells.** Not one move per missile, and not
   one charge per missile.
-* **Friendly fire is on.** Walking into your own cloud disables the harvester hour
-  by hour, so the comb must be the smear MINUS your own blast. `plan_comb` does
-  this and returns a contiguous serpentine — a filtered *set* of walkable cells is
-  not a *path*, and feeding one straight to `emit_chain` produced a walk that
-  backtracked and ran to 27 moves against a cap of 21.
+* **Friendly fire is on.** The safe-edge comb is the smear MINUS your own blast;
+  the interior comb only runs after the cloud clears. `plan_comb` builds a
+  contiguous serpentine — a filtered *set* of walkable cells is not a *path*.
 * **The probe goes beside the landing, never on it.** A drop onto your own probe
-  crushes it.
+  crushes it. (On the delayed interior comb there is no probe — every cell is
+  inside the blast, so there is nowhere legal to place one; the drop lands cold at
+  H9 regardless.)
 
 `targets="redsign"` needs `scorch.py` in the fork. Without it the play degrades to
 the pattern path and the error message will blame `when` instead.
 
+`take_the_ground=True` is the ONLY legitimate use of that flag: the walkable
+cells are defined BY our own blast, so no separate grab option could compute them.
+
 ---
 
-## SNAP — refuse the landing on a contested pure, then take it
+## SNAP — two plays, split on whether you can see the pure
+
+A SNAP guards one cell for one hour, so it only pays when you know where the rival
+will be. There are exactly two readable cases, and the agent carries one play for
+each:
+
+* **You can see the pure** (both you and a rival have vision on it) → snap the
+  square itself: `PURE_TRAP`.
+* **You cannot see the pure**, but a rival lit one → snap the eye that found it:
+  `BLIND_THE_FINDER`.
+
+### PURE_TRAP — the pure is visible to both
 
 ```python
 WeaponPlay(
@@ -132,16 +167,21 @@ WeaponPlay(
     why=("a pure we can see that a rival probe also watches is the one cell "
          "on the board whose occupation is predictable — they will smash-and-"
          "grab it at hour one; snapping it refuses that landing and damages "
-         "the hull, and because the cell goes cold after the hour we drop "
-         "onto the same pure at hour two and take it ourselves"),
+         "the hull, then a smash-grab lands on the cold pure at hour two and "
+         "banks it — pick ONE grab on that cell, not two"),
 )
 ```
+
+No `take_the_ground`. This play fires **denial-only** and names its pairing in
+`combines_with`. The snap owns the cell at H1, so the paired `smash_grab` lands at H2
+on its own — carrying a harvester on the snap would double-book the cell against that
+grab.
 
 Observed on a board with four rival eyes on one pure:
 
 ```
 H1  {"a": "snap_launch", "at": [31, 18]}
-H2  {"a": "drop", "unit": "harvester_p1", "at": [31, 18]}
+H2  {"a": "drop", "unit": "harvester_p1", "at": [31, 18]}   # the PAIRED grab, not this play
 H3  {"a": "pickup", "unit": "harvester_p1"}
 ```
 
@@ -161,14 +201,58 @@ is right here and the resolver does the gating.
 **You can see a pure.** The seat view strips `pure_cells`, but a pure is a
 `red_tiles` row at `purity >= 255` and those arrive wherever you have live vision.
 
-**The cell is hot for you too — for one hour only.** You cannot snap and land in
-the same hour. Fire at H1 and the landing queued behind it arrives at H2 on ground
-gone cold. That one-hour window is what makes snap better than chaff here: chaff
-jams you until H4 and costs 300 blue, snap costs 100 and hands you the pure at H2.
+**You cannot land on your own snap.** The cell is hot for you too, for one hour, so
+a landing at H1 is refused. Fire the snap denial-only at H1 and pair exactly ONE grab
+(`SMASH_GRAB` / `GRAB1`): that grab lands at H2 on ground gone cold and banks the pure
+for 100 blue. Do not stack a second grab on the cell — the later drop hits stripped
+green. That one-hour window is what makes snap better than chaff here: chaff jams you
+until H4 and costs 300 blue, snap costs 100 and hands the pairing the pure at H2.
 
 More watchers is *better*, not worse. Killing one eye of four is one-in-many
 denial, but snapping the GROUND does not care how many eyes are on it: the cell is
 hot for everyone, so every landing into it is refused by the one charge.
+
+### BLIND_THE_FINDER — the pure is lit but you cannot see it
+
+```python
+WeaponPlay(
+    play_id="BLIND_THE_FINDER",
+    weapon="snap",
+    when="redsign_theirs",
+    hour="super_early",
+    targets="finder_probe",
+    min_targets=1,
+    combines_with="blind_grab",
+    why=("when a rival has lit a pure we cannot see, the eye that found it is "
+         "the only target we can name; snapping it at hour one refuses their "
+         "drop for lack of live vision, then a paired blind-grab combs the "
+         "smear they can no longer reach"),
+)
+```
+
+No `take_the_ground` and no `probe_the_comb`. Like `PURE_TRAP`, this snap fires
+denial-only; the paired `blind_grab` carries the probe that relights the seam and
+combs the smear.
+
+Observed on a single-eye board: `aim` = the finder probe. The sequence is snap the
+eye at H1 → the paired blind-grab's probe relights the seam → its harvester combs the
+smear the rival can no longer reach.
+
+**Why the eye and not the ground here.** A snap resolves ABOVE the hour-start
+vision snapshot (§3.9.7), so killing the sole finder refuses the rival's drop for
+lack of live vision THAT night — the same effect a 300-blue chaff buys, for 100.
+`finder_gate` only fires this when it is worth it: one covering eye is STRONG; two
+is worth it only if we can also see the pure; three or more is one-in-many denial
+and it holds the charge (that is the WEAK refusal you will see in the notes).
+
+The smear comb is the **paired blind-grab's** job, not the snap's. The snap is one
+cell for one hour, so from H2 the whole smear is cool and the grab's `plan_comb`
+walks it with nothing to avoid.
+
+**The two SNAP plays do not collide.** `PURE_TRAP` needs a pure in `red_tiles` at
+purity 255 (visible to us); `BLIND_THE_FINDER` needs a rival redsign whose pure we
+cannot see. On a board where both hold, the model picks between them — snapping the
+square is stronger when available, snapping the eye is the fallback.
 
 ---
 
