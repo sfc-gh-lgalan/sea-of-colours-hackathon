@@ -55,24 +55,27 @@ _OWN_ACTION_TAGS = {
     "drop", "step", "pickup", "probe", "mine_lay",
     "emp_launch", "chaff_flare", "wait",
     # SNAP is a real per-hour action (§4.9.4) and the seat needs to see it in
-    # its own log. Note the asymmetry that made this easy to miss: the wire
-    # verb is ``snap_launch`` but the replay frame tag is ``snap``, so a tag
-    # set keyed on the verb drops the frames. Without it the hour simply goes
-    # missing from the EXECUTION LOG and the reflection block reads "I ordered
-    # a SNAP that never executed" — a false self-report that then corrupts
-    # tomorrow's journal.
-    "snap",
+    # its own log. The engine writes the frame as ``snap_launch`` — the same
+    # spelling as the wire verb, exactly like ``emp_launch`` beside it.
+    #
+    # v1.48: this said ``"snap"`` and carried a comment asserting the frame
+    # tag differed from the verb. It does not, and the wrong token dropped
+    # every SNAP a seat ever fired out of its own EXECUTION LOG. The hour
+    # simply went missing, so a seat that fired one had no evidence it had —
+    # observed live: a seat fired a SNAP that fried a probe, saw no SNAP in
+    # its log, and wrote "the SNAP denial worked" into its journal anyway.
+    # Right by luck, and the guess is what gets carried forward.
+    "snap_launch",
     # failure/interdiction outcomes on your OWN units — learning signal.
-    "waste", "empd", "damaged",
-    # SNAP-hit outcomes on your own units, for the same reason as ``empd``:
-    # the seat needs to see the interdiction, not the underlying move that
-    # failed to resolve.
-    "snapped",
+    # ``chaffed`` is a cancelled launch (a rival's flare eating your hour);
+    # a SNAP hit on your own unit arrives as ``damaged``. There is no
+    # ``snapped`` tag — the set claimed one for a year and never matched it.
+    "waste", "empd", "damaged", "chaffed",
 }
 # Tags that are PUBLIC when a rival does them (RULEBOOK §5.1 / §3.15 / §4.9.4).
 # A SNAP strike is reported to every seat whether or not it found anything,
 # because the scorch mark announces it.
-_PUBLIC_ORBITAL_TAGS = {"probe", "emp_launch", "chaff_flare", "snap"}
+_PUBLIC_ORBITAL_TAGS = {"probe", "emp_launch", "chaff_flare", "snap_launch"}
 # A rival's FIELD moves — shown only when the cell fell in your live vision.
 _ENEMY_FIELD_TAGS = {"step", "drop", "pickup", "mine_lay"}
 # Frames that are scaffolding, not a per-hour action.
@@ -452,7 +455,80 @@ def lost_in_transit(
         p for p in harvested_from_view(agent_view)
         if str(p.get("id") or p.get("square_id") or "") not in banked_ids
     ]
-    return _score_parcels(lost) if lost else {}
+    if not lost:
+        return {}
+    scored = _score_parcels(lost)
+    scored["causes"] = loss_causes(frames, player)
+    return scored
+
+
+#: Caption fragments the ENGINE writes when cargo dies on the surface. Matched
+#: on the caption because a replay frame carries no unit field — the unit name
+#: only ever appears inside the sentence (v14).
+_LOSS_MARKS = (
+    ("DAMAGED", "lifted DAMAGED — a damaged harvester banks NOTHING"),
+    ("COLLISION", "collision — unlifted cargo is spilled"),
+    ("crippled", "crippled by a SNAP"),
+)
+
+
+def loss_causes(
+    frames: Optional[Sequence[Mapping[str, Any]]], player: str,
+) -> List[str]:
+    """Why cargo was dug and never banked — the hour, the unit and the reason.
+
+    v14. ``LOST IN TRANSIT`` used to print the size of the loss and then set
+    the agent a quiz: "Find the hour in the log above (a collision, a jam, or a
+    unit still on the surface at dawn) and say so." It is not a quiz. Every
+    cause is already in the frames the same function is holding, and asking the
+    model to infer it produced confident wrong answers — s4021 d05 lost three
+    parcels to a harvester that lifted DAMAGED at H07, and the reflection
+    recorded "the harvesters were destroyed or crashed at dawn", which is two
+    mistakes about one sentence sitting in its own log.
+
+    Detected here, stated on the card, so the reflection reasons about a fact
+    instead of a guess. Dawn is the residual case: a unit that dropped and
+    never picked up was still standing when the sun came up, and Aurora takes
+    unlifted cargo.
+    """
+    if not frames:
+        return []
+    causes: List[str] = []
+    dropped: Dict[str, int] = {}
+    lifted: set = set()
+    for frame in frames:
+        if not isinstance(frame, Mapping) or str(frame.get("owner") or "") != str(player):
+            continue
+        cap = str(frame.get("caption") or "")
+        hour = _as_int(frame.get("hour"), 0)
+        tag = str(frame.get("tag") or "")
+        unit = _unit_in(cap)
+        if tag == "drop" and unit:
+            dropped.setdefault(unit, hour)
+        if tag == "pickup" and unit:
+            lifted.add(unit)
+        if tag == "chaffed":
+            causes.append(f"H{hour:02d} {unit or 'a unit'} was CHAFF-jammed off its slot")
+            continue
+        for mark, why in _LOSS_MARKS:
+            if mark in cap:
+                causes.append(f"H{hour:02d} {unit or 'a unit'} {why}")
+                break
+    for unit, hour in dropped.items():
+        if unit not in lifted:
+            causes.append(
+                f"{unit} dropped at H{hour:02d} and NEVER lifted — it was still "
+                "on the surface at dawn, and Aurora takes unlifted cargo"
+            )
+    # Dedup, order preserved: the same harvester can trip two marks in one line.
+    seen: set = set()
+    return [c for c in causes if not (c in seen or seen.add(c))]
+
+
+def _unit_in(caption: str) -> str:
+    """The first unit id named in an engine caption, or ``""``."""
+    m = re.search(r"\b(harvester|probe)_\w+", caption)
+    return m.group(0) if m else ""
 
 
 # ── formatting ──────────────────────────────────────────────────────────────
@@ -610,13 +686,25 @@ def format_block(memory: Mapping[str, Any]) -> str:
     if _as_int(lost.get("parcels"), 0):
         lost_tiers = _fmt_red_tiers(lost.get("red_tiers") or {})
         lost_suffix = f" ({lost_tiers})" if lost_tiers else ""
+        # v14 — this used to end "Find the hour in the log above (a collision,
+        # a jam, or a unit still on the surface at dawn) and say so", which
+        # set the seat a puzzle whose answer the frames already hold. Asking
+        # a model to re-derive a fact you have is how you get a confident
+        # wrong one. ``loss_causes`` reads the captions and names it.
+        causes = [str(c) for c in (lost.get("causes") or []) if str(c).strip()]
+        if causes:
+            why = " CAUSE: " + "; ".join(causes) + "."
+        else:
+            why = (
+                " CAUSE: not recoverable from the frames — the usual reasons "
+                "are a collision, a chaff jam on the pickup hour, or a unit "
+                "still on the surface at dawn."
+            )
         out.append(
             f"  LOST IN TRANSIT: {_as_int(lost.get('parcels'), 0)} parcel(s) "
             f"worth red +{_as_int(lost.get('red_pts'), 0)}{lost_suffix}"
             f"   blue +{_as_int(lost.get('blue_fissile'), 0)} fissile — "
-            "HARVESTED but never banked. Find the hour in the log above (a "
-            "collision, a jam, or a unit still on the surface at dawn) and say "
-            "so; do NOT count this as yield."
+            f"HARVESTED but never banked.{why} Do NOT count this as yield."
         )
 
     # WHAT YOU SAW.
@@ -733,7 +821,7 @@ def _what_you_saw(
                 # Public per §4.9.4 — the strike is reported to every seat
                 # whether or not it found anything, because the scorch mark
                 # announces it.
-                "snap": "fired a SNAP round",
+                "snap_launch": "fired a SNAP round",
             }.get(tag, tag)
             suffix = "" if tag == "chaff_flare" else cell_s
             note = " (public)" if tag == "probe" else ""

@@ -7,11 +7,16 @@ mistakes. This module is the structural guardrail that catches them AFTER
 the LLM responds and BEFORE the plan is submitted to the engine:
 
   1. NO-BEACON / ILLEGAL DROP — a ``drop`` onto a cell that is not in
-     live vision (no probe disk / friendly-unit tile) or onto a GREEN /
-     synthetic-green hazard or off-grid. The engine rejects the drop and
-     every step/pickup that depended on it no-ops, wasting the harvester's
-     whole night. We reroute to a legal adjacent cell when one exists, or
-     drop the doomed chain entirely.
+     live vision (no probe disk / friendly-unit tile) or off-grid. The
+     engine rejects those, and every step/pickup that depended on the
+     landing no-ops, wasting the harvester's whole night. We reroute to a
+     legal adjacent cell when one exists, or drop the doomed chain
+     entirely. We also refuse a drop onto GREEN / synthetic-green — that
+     one the engine ALLOWS (v1.48: this docstring used to claim otherwise,
+     which is how the veto came to be applied to steps as well). We block
+     it because landing on stripped ground banks nothing and pays -100, so
+     it is self-harm with no upside — not because it is illegal. Walking
+     ACROSS green is left alone; the menu prices it and the agent decides.
 
   2. SELF-CRUSH (nuanced) — a ``drop`` onto a friendly probe cell that
      still has >= 2 nights of vision left AND has no loot underneath. That
@@ -592,12 +597,20 @@ def sanitize_moves(
                 m = {"a": "step", "unit": unit, "to": [tx, ty]}
             cx, cy = cur
             adjacent = abs(tx - cx) + abs(ty - cy) == 1
-            legal = adjacent and _in_bounds(tx, ty) and (tx, ty) not in bad
+            # v1.48 — green is NOT a step legality test. ``bad`` still gates
+            # DROPS (landing on stripped ground banks nothing, so it is pure
+            # self-harm and the menu declines to offer it), but the engine has
+            # no rule against WALKING over green: it costs -100 at settlement
+            # and that is a price, not a refusal. Vetoing it here truncated
+            # chains that were crossing their own wake on purpose — to reach a
+            # mass behind it, or to re-walk a seam a rival might have denied —
+            # and cost more red than the penalty ever did. The menu now prices
+            # the crossing honestly, so the agent can make this trade itself.
+            legal = adjacent and _in_bounds(tx, ty)
             collides = claimed.get((tx, ty)) not in (None, unit)
             if not legal or collides:
                 why = (
                     "collision" if collides
-                    else "green/hazard" if (tx, ty) in bad
                     else "non-adjacent/off-grid"
                 )
                 log.append(

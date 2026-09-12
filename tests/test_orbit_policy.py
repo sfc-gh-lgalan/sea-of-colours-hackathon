@@ -251,16 +251,44 @@ def test_the_orbit_path_does_not_call_the_shared_planner():
     assert "orbit_policy import" in src
 
 
-def test_the_policy_module_is_self_contained():
-    """No imports out of the fork, so a copied directory keeps working."""
+def test_the_policy_module_borrows_no_policy_from_outside_the_fork():
+    """A copied directory must keep working — and keep its OWN doctrine.
+
+    v14 — this used to forbid ``from sea_of_colours`` outright, which
+    reads as isolation but was really a ban on single-sourcing. The prices
+    were retyped as literals under a "mirrors of the engine constants"
+    comment, and two of them stopped mirroring: ``emp_credit_cost`` said 0
+    where ``game/weapons.py`` says 250, and there were no SNAP dials at
+    all. AGENTS.md is explicit that this is the expensive direction to get
+    wrong — attendee forks copy V12 wholesale, so a stale literal here is
+    replicated into every fork in the room and cannot be fixed centrally.
+
+    So the rule is narrowed to what actually matters. A fork may read
+    ENGINE constants, which are the same numbers for everyone and are not
+    anybody's policy. It may not import another harness's code or the
+    shared heuristic planner, because that is how a room of forks quietly
+    ends up sharing one buying policy again.
+    """
     from pathlib import Path
 
     policy = (
         Path(__file__).resolve().parents[1]
         / "sea_of_colours/orchestrator_2/harnesses/tabula_v12/orbit_policy.py"
     )
-    src = policy.read_text(encoding="utf-8")
-    assert "from sea_of_colours" not in src, (
-        "orbit_policy.py should not reach outside the fork — an attendee "
-        "who copies the directory must get a working policy"
+    # Parsed, not grepped: the module docstring names the shared planner it
+    # was carved out of, and a substring scan reads that history as a
+    # dependency.
+    import ast
+
+    allowed = {"sea_of_colours.game.session", "sea_of_colours.game.weapons"}
+    modules = set()
+    for node in ast.walk(ast.parse(policy.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            modules.update(a.name for a in node.names)
+    reaching_out = {m for m in modules if m.startswith("sea_of_colours")}
+    assert reaching_out <= allowed, (
+        "orbit_policy.py may only reach outside the fork for ENGINE "
+        f"constants, never for behaviour — found: {sorted(reaching_out - allowed)}"
     )

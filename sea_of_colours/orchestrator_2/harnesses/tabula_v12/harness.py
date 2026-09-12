@@ -342,6 +342,12 @@ def run(
     hazard_cells = hazard_memory_mod.accumulate(
         session_id, player, agent_view, store=store, season_name=season_name,
     )
+    # v1.48 — hand the same union to the YIELD pricer. It indexes the view, and
+    # the view's green channel is visible-only, so ground we stripped ourselves
+    # went dark and came back priced at 0 — a menu option could advertise
+    # "green 0" on the line above a HAZARD warning naming three green cells it
+    # crossed. The sanitizer and the hazard annotator already get this set.
+    agent_view["stripped_memory"] = [list(c) for c in sorted(hazard_cells)]
     # Fix 0.7 (OBS-45) — the same monotonic trick for BLUE. A bluesign is
     # generation-time geometry that never retires, so without this union a
     # pocket the seat mined out itself keeps being sampled as a target.

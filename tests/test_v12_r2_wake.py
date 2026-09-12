@@ -144,9 +144,17 @@ def test_the_flank_still_reaches_the_seam():
     assert flank.waves[0].comb_path, "flank lost its whole route to the block"
 
 
-def test_a_stale_rival_sign_warns_that_the_jackpot_is_probably_gone():
-    """OBS-53's half of the same night, at the pattern level: the sign is a
-    night old, so the finder has had a full turn on the exact cell."""
+def test_a_stale_rival_sign_is_aged_but_its_jackpot_is_not_discounted():
+    """v14 — the age is still tracked and still shown; the DISCOUNT is gone.
+
+    OBS-53 read the age correctly and then drew the wrong conclusion from
+    it. A sign a night old means the finder has had a turn on the halo, not
+    on the pure: the engine retires a seam the instant its last pure is
+    harvested (``_retire_redsign_if_spent``) and ``view.py`` ships only live
+    regions, so a beacon you can still SEE still has its jackpot. The age
+    belongs on the card as context for the ring; it does not belong in the
+    jackpot term.
+    """
     from sea_of_colours.orchestrator_2.harnesses.tabula_v12 import (
         option_economics as oe,
     )
@@ -154,4 +162,4 @@ def test_a_stale_rival_sign_warns_that_the_jackpot_is_probably_gone():
     assert oe.sign_ages_by_beacon(view) == {_BEACON: 1}
     est = oe.blind_estimate([(32, 9), (32, 8), (32, 7)], view)
     assert est is not None
-    assert est["pure_survival"] < 0.5
+    assert est["pure_survival"] == 1.0

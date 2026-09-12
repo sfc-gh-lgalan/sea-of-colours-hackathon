@@ -992,16 +992,24 @@ def _fmt_blind(blind: Mapping[str, Any]) -> str:
         f"~+{int(blind['expected_pts'])}"
     )
     stale = ""
-    survival = float(blind.get("pure_survival", 1.0))
     nights = int(blind.get("nights_held") or 0)
-    if survival < 1.0:
+    if nights > 0:
+        # v14 — this note used to say the pure was "only ~35% likely to still
+        # be on the board" and discount the expectation for it, and it was
+        # gated on that discount, so retiring the discount would have taken
+        # the whole note with it. Both halves were wrong in the same way: a
+        # beacon is retired out of the view the instant its last pure is
+        # harvested, so a sign you can still SEE is a sign that still has its
+        # pure. What age actually costs is the HALO around it.
         stale = (
             f" NOTE — this sign was broadcast {nights} night(s) ago and the "
-            f"FINDER has held exact vision of the pure ever since, so it is "
-            f"only ~{survival:.0%} likely to still be on the board; the "
-            f"expectation above is discounted for that. What you are attacking "
-            f"for is the UNWORKED HALO and the DENIAL, not the jackpot. Expect "
-            f"stripped ground (-100 a cell) where they have already walked."
+            f"FINDER has held exact vision of the pure ever since. The pure "
+            f"IS still there: a beacon goes dark the moment its last pure is "
+            f"taken, so a sign you can still see has not been banked. What "
+            f"{nights} night(s) of a finder working it costs you is the "
+            f"UNWORKED HALO — expect stripped ground (-100 a cell) where they "
+            f"have already walked, and aim the comb at cells they are least "
+            f"likely to have reached."
         )
     return (
         f"{head}. That expectation is ALREADY discounted by the odds; a juice "

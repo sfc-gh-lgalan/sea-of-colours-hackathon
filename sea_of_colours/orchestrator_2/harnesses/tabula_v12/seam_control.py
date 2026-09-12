@@ -59,7 +59,7 @@ cluster on the seam — that is the whole point of a redsign campaign).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from sea_of_colours.orchestrator_2.harnesses.tabula_v12.comb_shapes import (
@@ -558,6 +558,98 @@ def enumerate_value_ring(
             "score": round(score, 1),
         })
     return out
+
+
+def short_twin(
+    pattern: "SeamPattern", *, steps: int = _CHAFF_CHAIN_STEPS,
+) -> Optional["SeamPattern"]:
+    """A LIFT-EARLY companion to a full-length pattern, offered beside it.
+
+    v14 — the fix for a cap that was applied in one layer and denied in
+    another. Whenever a rival held ordnance, every seam comb here was built
+    at ``_CHAFF_CHAIN_STEPS`` (2) and that was the ONLY version the thinker
+    ever saw. Meanwhile the packager printed, on the same card, that nothing
+    had been shortened on its behalf and that route length was its call — so
+    the seat was told to choose a length from a menu offering exactly one.
+
+    Now the full walk is the pattern and this is its twin: same drop, same
+    bearing, chain cut to ``steps`` and lifting inside the safe window. The
+    trade is stated rather than made for them — a jam costs the whole hold,
+    and a short chain banks less but banks it.
+
+    Returns ``None`` when the twin would duplicate the original, because a
+    second id over an identical walk reads as a choice and is not one. Same
+    rule the BLIND_GRAB / BLIND_AND_GRAB pair follows.
+    """
+    if not pattern.waves:
+        return None
+    if all(len(w.comb_path) <= steps for w in pattern.waves):
+        return None
+    waves = [
+        replace(w, comb_path=list(w.comb_path[:steps]), pickup_after=True)
+        for w in pattern.waves
+    ]
+    return replace(
+        pattern,
+        pattern_id=f"{pattern.pattern_id}_SHORT",
+        title=f"{pattern.title} — SHORT, lift early",
+        when=(
+            f"{pattern.when} · the same play cut to {steps} step(s) so the "
+            "hold is banked before a jam can reach it"
+        ),
+        rationale=(
+            "SAME PLAY, SHORTER CHAIN. A rival is holding ordnance tonight, so "
+            "this is the version that lifts inside the safe window. What you "
+            "are choosing between is not safe-versus-greedy in the abstract: "
+            "the long twin banks more IF it gets home, and banks NOTHING if a "
+            "chaff jam catches the pickup hour — unlifted cargo is lost whole, "
+            "not pro-rata. Take the short one when the rival has a reason to "
+            "spend a flare on you (you are ahead, or this seam is the night's "
+            "prize); take the long one when they do not, or when you are far "
+            "enough behind that the safe bank does not close the gap anyway. "
+            + pattern.rationale
+        ),
+        waves=waves,
+    )
+
+
+def _with_short_twins(
+    patterns: List["SeamPattern"], weapons: bool,
+) -> List["SeamPattern"]:
+    """Append a lift-early twin for every pattern, when a rival is armed."""
+    if not weapons:
+        return patterns
+    twins = [t for t in (short_twin(p) for p in patterns) if t is not None]
+    return patterns + twins
+
+
+def _flank_value_cells(
+    agent_view: Mapping[str, Any],
+    beacon: Tuple[int, int],
+    probe_f: Tuple[int, int],
+    fallback: Sequence[Tuple[int, int]],
+) -> List[Tuple[int, int]]:
+    """The value ranking for a FLANK comb — ringed on the flank's own probe.
+
+    v14, and it is a one-line bug with a five-cell consequence. Both flank
+    patterns built ``value_cells`` from a ring enumerated around ``probe1``,
+    the APPROACH-axis probe, and then handed it to a comb confined to
+    ``probe_f``'s disk on the OPPOSITE axis. :func:`comb_path` keeps only the
+    ranked cells that fall inside the disk it was given, so most of that
+    ranking was discarded on arrival — and when nothing survives the filter,
+    the gradient collapses to ``(0, 0, -spread)`` and the walk simply
+    maximises distance from the probe centre. That is the "fan out from the
+    probe" tie-break :func:`comb_path`'s own docstring says was removed,
+    reappearing through the back door whenever the rank came back empty.
+
+    Ring the probe whose disk the walk actually lives in. ``fallback`` is the
+    wave-1 ranking, kept for the case where the flank disk holds nothing
+    ranked at all — a stale ranking still beats no ranking, because it at
+    least points somewhere rather than outward.
+    """
+    ring = enumerate_value_ring(agent_view, beacon, probe_f)
+    cells = [tuple(c["at"]) for c in ring]
+    return cells or [tuple(c) for c in fallback]
 
 
 def _flank_probe(
@@ -1554,9 +1646,10 @@ def _walkin_rival_patterns(
     drop1, path1 = near
     used = {drop1, *path1}
     budget = max(0, _HOLD_CAP_STEPS - len(path1))
-    comb_n = _CHAFF_CHAIN_STEPS if weapons else budget
+    # v14 — full tail whatever the rival holds; the lift-early version is a
+    # twin on the menu, not a substitution made behind the seat's back.
     tail1 = _mass_tail(
-        agent_view, beacon, green, width, height, used, min(budget, comb_n),
+        agent_view, beacon, green, width, height, used, budget,
     )
     patterns = [SeamPattern(
         pattern_id="WALK_TO_CONTEST",
@@ -1619,7 +1712,7 @@ def _walkin_rival_patterns(
             break
         blocked.add(cand[0])  # this entry re-treads the first unit's track
     if far is None:
-        return patterns
+        return _with_short_twins(patterns, weapons)
     drop2, path2 = far
     tail2 = _mass_tail(
         agent_view, beacon, green, width, height,
@@ -1653,7 +1746,7 @@ def _walkin_rival_patterns(
             ),
         )],
     ))
-    return patterns
+    return _with_short_twins(patterns, weapons)
 
 
 def _mine_patterns(
@@ -1880,10 +1973,15 @@ def _mine_patterns(
             )],
         ))
 
-    sweep_steps = _CHAFF_CHAIN_STEPS if weapons else _SEAM_SWEEP_STEPS
+    # v14 — FULL_SWEEP is the LONG option by definition; SMASH_GRAB is
+    # already its short partner on the same harvester. Trimming it to
+    # _CHAFF_CHAIN_STEPS under ``weapons`` made "the greedy gamble" shorter
+    # than the safe play it exists to contrast with, and the note then told
+    # the seat to "lean SMASH_GRAB" — i.e. the menu removed the choice and
+    # then advised on it. The pair IS the choice; build it at full length.
     comb_full = _comb_path(
         probe1[0], probe1[1], drop1, width, height, green, value_cells,
-        max_steps=sweep_steps,
+        max_steps=_SEAM_SWEEP_STEPS,
     )
     if len(comb_full) >= 2 and len(comb_full) > len(comb1):
         note_sweep = (
@@ -2097,12 +2195,11 @@ def _mine_patterns(
     wave12_cells |= {(int(c[0]), int(c[1])) for c in comb2}
     drop3 = _value_drop(agent_view, beacon, probe3, width, height,
                         exclude=wave12_cells)
-    # A3 — under weapons keep even the late sweep short so it lifts inside the
-    # safe window rather than riding a full comb into the jam.
+    # v14 — full length here too; the lift-early version is offered as a twin
+    # rather than substituted for this one (see short_twin).
     comb3 = _comb_path(
         probe3[0], probe3[1], drop3, width, height, green | wave12_cells,
         value_cells,
-        **({"max_steps": _CHAFF_CHAIN_STEPS} if weapons else {}),
     )
     note3 = (
         "late, bigger pattern from a third bearing — mop the dense seam. With "
@@ -2135,6 +2232,12 @@ def _mine_patterns(
     # SWEEP_RING sits beside SECURE_MASS: they are the careful and greedy uses
     # of the SAME second harvester, so the menu shows them as a pair.
     patterns.extend([secure, *h2_alt, late])
+    # v14 — the late sweep now runs full length; its lift-early twin goes on
+    # the menu beside it when a rival is armed (see short_twin).
+    if weapons:
+        twin = short_twin(late)
+        if twin is not None:
+            patterns.append(twin)
     return patterns
 
 
@@ -2389,10 +2492,14 @@ def _rival_blind_attack_patterns(
     drop_f = _value_drop(
         agent_view, beacon, probe_f, width, height, exclude=wave1_wake,
     )
-    flank_steps = _CHAFF_CHAIN_STEPS if weapons else steps
+    # v14 — build the FULL walk whatever the rival is holding. The 2-step cap
+    # under ``weapons`` used to be applied here and nowhere else, so a card
+    # that told the seat "route length is your call" offered it one length.
+    # ``short_twin`` puts the cut-down version on the menu beside this one.
     comb_f = _comb_path(
-        probe_f[0], probe_f[1], drop_f, width, height, wave1_wake, value_cells,
-        max_steps=flank_steps,
+        probe_f[0], probe_f[1], drop_f, width, height, wave1_wake,
+        _flank_value_cells(agent_view, beacon, probe_f, value_cells),
+        max_steps=steps,
     )
     flank = SeamPattern(
         pattern_id="UNBEATEN_FLANK",
@@ -2426,8 +2533,17 @@ def _rival_blind_attack_patterns(
     # can cut the long comb down to the floor), since a duplicate under a second
     # name reads as a real choice and is not one.
     if len(blind.waves[0].comb_path) >= len(blind_long.waves[0].comb_path):
-        return [blind_long, flank]
-    return [blind_long, blind, flank]
+        out = [blind_long, flank]
+    else:
+        out = [blind_long, blind, flank]
+    # The flank now comes at full length; when a rival is armed its lift-early
+    # twin goes on the menu too, so the length is a choice rather than a
+    # decision already taken for the seat.
+    if weapons:
+        twin = short_twin(flank)
+        if twin is not None:
+            out.append(twin)
+    return out
 
 
 def _rival_patterns(
@@ -2604,8 +2720,8 @@ def _rival_patterns(
         agent_view, beacon, probe_f, width, height, exclude=wave1_wake,
     )
     comb_f = _comb_path(
-        probe_f[0], probe_f[1], drop_f, width, height, wave1_wake, value_cells,
-        **({"max_steps": _CHAFF_CHAIN_STEPS} if weapons else {}),
+        probe_f[0], probe_f[1], drop_f, width, height, wave1_wake,
+        _flank_value_cells(agent_view, beacon, probe_f, value_cells),
     )
     flank = SeamPattern(
         pattern_id="UNBEATEN_FLANK",
@@ -2641,7 +2757,6 @@ def _rival_patterns(
     )
     comb_w = _comb_path(
         probe_w[0], probe_w[1], drop_w, width, height, wake_12, value_cells,
-        **({"max_steps": _CHAFF_CHAIN_STEPS} if weapons else {}),
     )
     walk = SeamPattern(
         pattern_id="WALK_IN",
@@ -2666,7 +2781,13 @@ def _rival_patterns(
             ),
         )],
     )
-    return [blind, flank, walk]
+    out = [blind, flank, walk]
+    # v14 — both lengths on the menu when a rival is armed (see short_twin).
+    if weapons:
+        out.extend(
+            t for t in (short_twin(flank), short_twin(walk)) if t is not None
+        )
+    return out
 
 
 def _pattern_probe_cost(p: SeamPattern) -> int:

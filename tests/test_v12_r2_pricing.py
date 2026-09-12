@@ -125,17 +125,38 @@ def test_our_own_sign_is_never_discounted():
     assert "PROBABLY ALREADY BANKED" not in text
 
 
-def test_the_jackpot_term_decays_but_the_halo_term_does_not():
+def test_a_visible_beacon_is_never_discounted_for_age():
+    """v14 — ``_pure_survival`` is 1.0 always, and that is the ENGINE's rule.
+
+    This used to assert the opposite: a rival sign held for a night priced
+    its jackpot at 35%, two nights at 10%. The decay was guessing at
+    something the engine already decides for us.
+    ``GameSession._retire_redsign_if_spent`` flips ``region["live"]`` off the
+    moment the last pure cell of a seam is harvested, and ``view.py`` ships
+    only regions with ``live`` true — a spent beacon LEAVES the seat view
+    rather than going grey in it. So a redsign you can see has a pure on it,
+    by construction (RULEBOOK §4.11).
+
+    The old model therefore cut the expected yield of every redsign attack
+    by two thirds or more and made contesting a rival's seam read as a bad
+    bet when it was the best play on the board.
+    """
     fresh = oe.blind_estimate(_comb(6), _fresh_view())
     stale = oe.blind_estimate(_comb(6), _smear_view(comb=[]))
     assert fresh["pure_survival"] == 1.0
-    assert stale["pure_survival"] < 0.5
-    assert stale["expected_pts"] < fresh["expected_pts"]
-    assert stale["expected_pts"] > 0        # halo + denial still worth the trip
+    assert stale["pure_survival"] == 1.0
     assert stale["pure_odds"] == fresh["pure_odds"]   # geometry is unchanged
 
 
-def test_the_staleness_is_spelled_out_on_the_option_line():
+def test_the_halo_still_decays_even_though_the_pure_does_not():
+    """What a night of rival work costs is the RING, not the jackpot.
+
+    The pure is guaranteed by the beacon still being visible; the mass
+    around it is not, because that is exactly what the finder has been
+    walking. That term is measured off the seam's own observed
+    density/purity rather than assumed, so it stays honest without
+    double-counting the pure.
+    """
     line = agency._fmt_blind(oe.blind_estimate(_comb(6), _smear_view(comb=[])))
     assert "FINDER has held exact vision" in line
     assert "UNWORKED HALO" in line

@@ -40,6 +40,21 @@ import random as _random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
+from sea_of_colours.game.session import (
+    HARVESTER_BUILD_COST,
+    PROBE_BUILD_COST,
+    REPAIR_COST,
+)
+from sea_of_colours.game.weapons import (
+    CHAFF_COST_BLUE_PURITY,
+    CHAFF_COST_CREDITS,
+    EMP_COST_BLUE_PURITY,
+    EMP_COST_CREDITS,
+    SNAP_COST_BLUE_PURITY,
+    SNAP_COST_CREDITS,
+    WEAPONISED_BLUE_CAP,
+)
+
 
 @dataclass(frozen=True)
 class OrbitDials:
@@ -75,21 +90,31 @@ class OrbitDials:
     #: Stop buying chaff at this many in stock, in the always-build band.
     chaff_stockpile_cap: int = 1
 
-    # Fallback prices — mirrors of the engine constants.
-    repair_cost: int = 500
-    probe_build_cost: int = 250
-    harvester_build_cost: int = 1500
+    # Fallback prices — IMPORTED from the engine, not retyped (v14).
+    #
+    # These were hand-copied literals and two of them had drifted:
+    # ``emp_credit_cost`` said 0 where game/weapons.py says 250, and there
+    # were no SNAP dials at all. A price the planner believes is zero is a
+    # price it never weighs, which is how this seat came to treat ordnance
+    # as blue-only — and a fork that reads these lines to learn what a
+    # weapon costs learns the wrong number. Single-source them; a retune
+    # of the engine dials now reaches the planner with no edit here.
+    repair_cost: int = REPAIR_COST
+    probe_build_cost: int = PROBE_BUILD_COST
+    harvester_build_cost: int = HARVESTER_BUILD_COST
     harvester_cap: int = 3
-    emp_blue_cost: int = 200
-    emp_credit_cost: int = 0
-    chaff_blue_cost: int = 300  # v1.36 — was 255
-    chaff_credit_cost: int = 0
+    emp_blue_cost: int = EMP_COST_BLUE_PURITY
+    emp_credit_cost: int = EMP_COST_CREDITS
+    chaff_blue_cost: int = CHAFF_COST_BLUE_PURITY
+    chaff_credit_cost: int = CHAFF_COST_CREDITS
+    snap_blue_cost: int = SNAP_COST_BLUE_PURITY
+    snap_credit_cost: int = SNAP_COST_CREDITS
     #: Fallback for ``meta.rules.weapon_blue_cap`` (RULEBOOK §4.9.8) —
     #: the most blue-worth of ordnance a seat may hold. Unlike the dials
     #: above this is not doctrine and retuning it buys you nothing: the
     #: engine refuses the build regardless. It is here so the policy can
     #: decline gracefully instead of proposing an order it will lose.
-    weapon_blue_cap: int = 600
+    weapon_blue_cap: int = WEAPONISED_BLUE_CAP
 
 
 #: The shipped economy. Fork-local, so retuning it cannot affect a rival.

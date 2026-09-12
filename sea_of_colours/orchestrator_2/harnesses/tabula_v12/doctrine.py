@@ -655,8 +655,13 @@ DROP ON THE VALUE — the landing cell is auto-harvested (free parcel #1):
       HOLD and only banks to your hoard at PICKUP, so a long chain leaves the
       whole load one crash/chaff/collision from being spilled. Strip the wider
       seam with a SECOND harvester or a later wave, never the grabbing unit.
-  Exception: never drop/step onto GREEN or synthetic-green (that auto-banks a
-  -100 parcel). Value-first, but hazard cells are still off-limits.
+  Exception: never DROP onto GREEN or synthetic-green. The landing auto-banks a
+  -100 parcel and there is nothing under it to take, so it is a wasted outing.
+  STEPPING ACROSS green is a different question and it is YOURS to answer
+  (v1.48): it is legal, it costs -100 at settlement, and the yield line prices
+  it for you — so crossing your own wake to reach a mass behind it is right
+  whenever the red on the far side beats the green underfoot. Read the number,
+  do not flinch at the colour.
 
   PRIORITY RED GRABS are the top of your value pyramid — ids GRAB1, GRAB2, … —
   and they list every pure / mass RED you can already SEE (LIVE) or REACH (ECHO

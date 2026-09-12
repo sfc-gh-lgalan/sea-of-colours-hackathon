@@ -142,7 +142,22 @@ def submit_orbit(
             plan_orbit_actions,
         )
         agent_view = view.get("agent_view") or view
-        actions, rationale = plan_orbit_actions(agent_view)
+        # v14 — V12 does not buy weapons. It never fired one: over nine
+        # measured seasons the shipped agent bought EMPs and left every
+        # charge in the rack at settlement, where a charge scores zero.
+        #
+        # The cost is not the BLUE, which is also worthless at settlement.
+        # It is the CREDITS: game/weapons.py prices an EMP at 250 credits
+        # and a SNAP at 250, and game/session.py prices a PROBE at 250. So
+        # every unfired charge was a probe not built — vision not opened,
+        # ground not found, on an agent whose whole edge is knowing where
+        # the red is. (Only chaff is credit-free, at 300 blue and 0.)
+        #
+        # This is a one-line change because the switch already existed for
+        # the tutorial opponent; nothing about the planner is forked. A
+        # fork that WANTS a rack turns it back on here — "buy an EMP on
+        # day one" is the exercise, and this is the line to change.
+        actions, rationale = plan_orbit_actions(agent_view, weapons_enabled=False)
         hud = agent_view.get("hud") or {}
         meta = agent_view.get("meta") or {}
         day = int(meta.get("day") or hud.get("day") or 0)

@@ -59,6 +59,12 @@ BEST_ROW_TRANSIT = 0
 GREEN_ENDGAME_PENALTY = 100
 # Engine outing budget: a drop banks its own cell + up to 5 steps.
 HOLD_CAPACITY = 6
+# v1.48 (OBS-54) — how much has to be at stake on cells two options share
+# before ``overlap_claims`` spends a line on it. Priced in ship points, and
+# what a shared cell puts at stake is its yield PLUS the -100 it becomes:
+# roughly one vein, or two traces. Deliberately not per-cell — see the
+# function's docstring for the night that argued for it.
+OVERLAP_WARN_POINTS = 200
 
 
 def _tier(purity: int) -> str:
@@ -160,6 +166,23 @@ def _enemy_trail_cells(agent_view: Mapping[str, Any]) -> Set[Cell]:
     return hazard_memory.enemy_trail_cells(agent_view)
 
 
+def _stripped_memory_cells(agent_view: Mapping[str, Any]) -> Set[Cell]:
+    """Ground WE stripped on an earlier night, remembered through fog.
+
+    Projected by the harness under ``stripped_memory`` (v1.48) from the same
+    monotonic union the sanitizer and the hazard annotator read. Absent on a
+    bare fixture view, which is fine — it can only ever add green.
+    """
+    out: Set[Cell] = set()
+    for raw in (agent_view.get("stripped_memory") or ()):
+        try:
+            x, y = raw
+            out.add((int(x), int(y)))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _echo_only_cells(agent_view: Mapping[str, Any]) -> Dict[Cell, int]:
     """RED cells known ONLY from a stale reading, with how old that reading is.
 
@@ -219,6 +242,7 @@ def _cell_index(agent_view: Mapping[str, Any]) -> Dict[Cell, Tuple[str, int]]:
         except (TypeError, KeyError, ValueError):
             continue
         idx[(x, y)] = (tile, p)
+    seen_live = set(idx)
     # Fallback projections (fixtures / older shapes). Never overwrite a live row.
     for row in (agent_view.get("red_tiles") or []):
         if not isinstance(row, Mapping):
@@ -238,6 +262,18 @@ def _cell_index(agent_view: Mapping[str, Any]) -> Dict[Cell, Tuple[str, int]]:
     # arrival.
     for cell in _enemy_trail_cells(agent_view):
         idx[cell] = ("GREEN", 0)
+    # v1.48 — our OWN stripped ground, remembered through fog. The rival case
+    # above is handled; ours was not, because the view only publishes green it
+    # can currently SEE. So a wake we walked two nights ago fell out of the
+    # index entirely and scored as "unknown" — i.e. free — and the menu quoted
+    # chains across it for less than they cost.
+    # This overwrites the ECHO projections above for the same reason the rival
+    # trail does — we HARVESTED the cell, so a stale red row remembering it as
+    # a vein is simply wrong — but never a live one: if a probe is lighting
+    # that ground right now, believe the eyes over the note.
+    for cell in _stripped_memory_cells(agent_view):
+        if cell not in seen_live:
+            idx[cell] = ("GREEN", 0)
     for row in (agent_view.get("blue_tiles") or []):
         if not isinstance(row, Mapping):
             continue
@@ -534,20 +570,31 @@ def _redsign_smear_meta(agent_view: Mapping[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _pure_survival(meta: Mapping[str, Any]) -> float:
-    """Odds a broadcast pure is STILL on the board, by who has been watching it.
+    """Odds a broadcast pure is STILL on the board. Always 1.0 — see below.
 
-    The finder holds the exact cell and a landing there auto-harvests, so each
-    night they have held it is a near-certain chance to have banked it. Our own
-    sign is the exception: if it were taken, we took it, and the cell would read
-    green rather than echo. Deliberately coarse — the point is to stop pricing a
-    week-old rival beacon at full jackpot, not to model a rival's schedule.
+    v14 — this used to return ``0.35 ** nights_held``, guessing at whether the
+    finder had banked the pure yet. The guess was not merely coarse, it was
+    estimating something the ENGINE ALREADY GUARANTEES, and it was wrong in the
+    expensive direction.
+
+    ``GameSession._retire_redsign_if_spent`` flips ``region["live"]`` to False
+    the moment the last pure cell of a seam is harvested, and
+    ``snowpark/view.py`` ships only regions with ``live`` true — a spent beacon
+    leaves every seat view rather than going grey in it. So a redsign you can
+    SEE has a pure on it, by construction. RULEBOOK §4.11: a seam stays live
+    "until the last pure cell goes".
+
+    The old decay therefore priced a guaranteed jackpot at 35% after one night
+    and 10% after two, which cut the expected yield of every redsign attack by
+    two thirds or more and made contesting a rival's seam look like a bad bet
+    when it was the best play on the board.
+
+    What DOES decay is the halo, not the pure: a seam the finder has worked for
+    a night has stripped ground around it. That is priced separately and
+    honestly, off the per-seam density/purity actually measured in
+    ``blind_estimate``, so nothing here needs to double-count it.
     """
-    if meta.get("mine"):
-        return 1.0
-    nights = int(meta.get("nights_held") or 0)
-    if nights <= 0:
-        return 1.0        # broadcast tonight — nobody has had a turn on it yet
-    return max(0.10, 0.35 ** nights)
+    return 1.0
 
 
 def blind_estimate(
@@ -701,29 +748,56 @@ def overlap_claims(
     when the second wave arrives to find the cell already stripped — worth 0,
     and -100 if it steps on the green it became.
 
-    Restricted to mass/pure RED, which is where the distortion is worth the ink;
-    a shared trace changes nothing. Returns ``{option_id: [(cell, tier,
-    [other_ids])]}``, empty for options that share nothing.
+    v1.48 (OBS-54) — this used to be restricted to mass/pure RED, on the
+    reasoning that "a shared trace changes nothing". True of one cell, false
+    of several, and the exception cost a night: on ``duel_s4001_d4_p1``, CH1
+    and CH2 ran the same seam from opposite ends and shared three VEIN cells.
+    No warning was printed, the model added 698 and 587 and expected 1285, and
+    the second harvester walked the first one's fresh strip line — three green
+    parcels, three wasted hours, ~694 points short. The single MASS cell that
+    DID trigger a warning that night was worth less than the three veins that
+    did not, because what a shared cell costs is never just its yield: it is
+    the double count PLUS the -100 the cell has become PLUS the hour.
+
+    So the test is now cumulative (``OVERLAP_WARN_POINTS``) rather than
+    per-cell tier. Any mass/pure share still warns unconditionally — that is
+    the old behaviour, kept so this can only ever add a warning, never
+    silence one.
+
+    Returns ``{option_id: [(cell, tier, [other_ids])]}``, empty for options
+    that share nothing worth the ink.
     """
     idx = _cell_index(agent_view)
     owners: Dict[Cell, List[str]] = {}
     for oid, walk in walks.items():
         for c in walk:
-            tile, purity = idx.get(c, ("", 0))
-            if tile != "RED" or _tier(purity) not in ("mass", "pure"):
+            tile, _purity = idx.get(c, ("", 0))
+            if tile != "RED":
                 continue
             if oid not in owners.setdefault(c, []):
                 owners[c].append(oid)
 
-    out: Dict[str, List[Tuple[Cell, str, List[str]]]] = {}
+    shared: Dict[str, List[Tuple[Cell, str, List[str]]]] = {}
     for cell, ids in owners.items():
         if len(ids) < 2:
             continue
         tier = _tier(idx[cell][1])
         for oid in ids:
-            out.setdefault(oid, []).append(
+            shared.setdefault(oid, []).append(
                 (cell, tier, [o for o in ids if o != oid])
             )
+
+    out: Dict[str, List[Tuple[Cell, str, List[str]]]] = {}
+    for oid, claims in shared.items():
+        if any(tier in ("mass", "pure") for _, tier, _ in claims):
+            out[oid] = claims
+            continue
+        stake = sum(
+            _red_ship_points(idx[cell][1]) + GREEN_ENDGAME_PENALTY
+            for cell, _, _ in claims
+        )
+        if stake >= OVERLAP_WARN_POINTS:
+            out[oid] = claims
     return out
 
 
