@@ -58,6 +58,7 @@ from sea_of_colours.game.weapons import (
     SNAP_COST_CREDITS,
     WEAPONISED_BLUE_CAP,
 )
+from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import weapon_forge
 
 
 @dataclass(frozen=True)
@@ -94,12 +95,6 @@ class OrbitDials:
     emp_stockpile_cap: int = 2
     #: Stop buying chaff at this many in stock, in the always-build band.
     chaff_stockpile_cap: int = 1
-    #: v13 — Stop buying SNAP at this many in stock. Higher than EMP's cap
-    #: because SNAP is CHEAP (100 blue vs 200) and single-use per target,
-    #: so a healthy stockpile is closer to "one for every rival probe you
-    #: might want to kill" than to "one for tonight". Sized to two full
-    #: shots of one-cell denial per remaining night on a 7-day season.
-    snap_stockpile_cap: int = 2
 
     # Fallback prices — mirrors of the engine constants.
     repair_cost: int = 500
@@ -110,6 +105,10 @@ class OrbitDials:
     emp_credit_cost: int = EMP_COST_CREDITS
     chaff_blue_cost: int = CHAFF_COST_BLUE_PURITY
     chaff_credit_cost: int = CHAFF_COST_CREDITS
+    #: The snap the seat declares a play for. One, not two: EMP 200 + chaff
+    #: 300 + snap 100 is 600, which is WEAPONISED_BLUE_CAP exactly, so a
+    #: second of anything prices one of the others out.
+    snap_stockpile_cap: int = 1
     snap_blue_cost: int = SNAP_COST_BLUE_PURITY
     snap_credit_cost: int = SNAP_COST_CREDITS
     #: Fallback for ``meta.rules.weapon_blue_cap`` (RULEBOOK §4.9.8).
@@ -121,7 +120,12 @@ class OrbitDials:
 
 
 #: The shipped economy. Fork-local, so retuning it cannot affect a rival.
-DEFAULT_DIALS = OrbitDials()
+# ECONOMY from weapon_plays.py. This is the one place the three weapons are
+# read as a single budget: EMP 200 blue, chaff 300, snap 100, against a
+# WEAPONISED_BLUE_CAP of 600. One of each is 600 exactly, so every stockpile
+# cap here is 1 — the shipped emp_stockpile_cap of 2 was 400 blue of intent
+# against a ceiling that could never pay for it AND a chaff.
+DEFAULT_DIALS = weapon_forge.tune_dials(OrbitDials())
 
 
 # ── View readers ──────────────────────────────────────────────────
@@ -225,7 +229,6 @@ def plan_orbit_actions(
     weapon_stock = orbit.get("weapon_stock") or {}
     emp_stock = int(weapon_stock.get("emp", 0) or 0)
     chaff_stock = int(weapon_stock.get("chaff", 0) or 0)
-    snap_stock = int(weapon_stock.get("snap", 0) or 0)
     weapon_prices = orbit.get("weapon_prices") or {}
     emp_price = weapon_prices.get("emp") or {}
     emp_blue_cost = int(emp_price.get("blue", dials.emp_blue_cost))
@@ -235,11 +238,10 @@ def plan_orbit_actions(
     chaff_credit_cost = int(
         chaff_price.get("credits", dials.chaff_credit_cost),
     )
+    snap_stock = int(weapon_stock.get("snap", 0) or 0)
     snap_price = weapon_prices.get("snap") or {}
     snap_blue_cost = int(snap_price.get("blue", dials.snap_blue_cost))
-    snap_credit_cost = int(
-        snap_price.get("credits", dials.snap_credit_cost),
-    )
+    snap_credit_cost = int(snap_price.get("credits", dials.snap_credit_cost))
 
     actions: List[Dict[str, Any]] = []
     descriptors: List[str] = []
@@ -372,6 +374,13 @@ def plan_orbit_actions(
             and _room_for(chaff_blue_cost)
         )
 
+    def _afford_snap() -> bool:
+        return (
+            blue_total >= snap_blue_cost
+            and remaining >= snap_credit_cost
+            and _room_for(snap_blue_cost)
+        )
+
     if weapons_enabled and not _room_for(min(emp_blue_cost, chaff_blue_cost)):
         descriptors.append(
             f"weapon build skipped (holding {held_weapon_blue} of the "
@@ -407,42 +416,6 @@ def plan_orbit_actions(
         )
         descriptors.append(f"wanted an EMP and could not afford it ({short})")
 
-    # v13 — SNAP behind EMP but ahead of chaff. Cheapest ordnance (100 blue
-    # vs 200/300), unique property (denies same-hour landings, §4.9.4).
-    # Bought on sight up to the stockpile cap, same doctrine as EMP: the
-    # rack is never the reason a play did not fire. See the OrbitDials
-    # note on the higher SNAP cap.
-    def _afford_snap() -> bool:
-        return (
-            blue_total >= snap_blue_cost
-            and remaining >= snap_credit_cost
-            and _room_for(snap_blue_cost)
-        )
-
-    if weapons_enabled and snap_stock < dials.snap_stockpile_cap and _afford_snap():
-        actions.append({"a": "build_snap", "count": 1})
-        remaining -= snap_credit_cost
-        blue_total -= snap_blue_cost
-        held_weapon_blue += snap_blue_cost
-        descriptors.append(
-            f"built SNAP on sight (blue {blue_total + snap_blue_cost} >= "
-            f"{snap_blue_cost}, rack {snap_stock} < {dials.snap_stockpile_cap}) "
-            "— 100 blue, single-cell denial, and the only weapon that stops "
-            "a rival's same-hour landing (§4.9.4)"
-        )
-    elif weapons_enabled and snap_stock >= dials.snap_stockpile_cap:
-        descriptors.append(
-            f"SNAP rack full ({snap_stock}/{dials.snap_stockpile_cap}) — "
-            "spend one tonight before buying another"
-        )
-    elif weapons_enabled:
-        short = (
-            f"blue {blue_total}/{snap_blue_cost}"
-            if blue_total < snap_blue_cost
-            else f"credits {remaining}/{snap_credit_cost}"
-        )
-        descriptors.append(f"wanted a SNAP and could not afford it ({short})")
-
     # Chaff keeps its old surplus band, behind the EMP.
     if weapons_enabled and blue_total > dials.blue_always_build:
         if chaff_stock < dials.chaff_stockpile_cap and _afford_chaff():
@@ -454,12 +427,57 @@ def plan_orbit_actions(
                 f"built CHAFF for egress jam (blue still {blue_total} after "
                 f"the EMP)"
             )
-        elif _afford_chaff():
-            actions.append({"a": "build_chaff", "count": 1})
-            remaining -= chaff_credit_cost
-            blue_total -= chaff_blue_cost
-            held_weapon_blue += chaff_blue_cost
-            descriptors.append("built CHAFF (blue surplus top-up)")
+        # (There used to be a second, UNCAPPED `elif _afford_chaff()` here —
+        # a "blue surplus top-up" that ignored chaff_stockpile_cap entirely.
+        # It was survivable while chaff was the last thing the seat bought.
+        # It is not survivable now: buy_asap drops blue_always_build from 300
+        # to 99, so the branch fires on almost any night, and at 300 blue a
+        # second chaff is half the 600 arsenal cap — enough to lock out the
+        # snap this seat now declares a play for. Chaff is capped like
+        # everything else.)
+
+    # Priority 3c: the snap, behind the other two.
+    #
+    # Deliberately NOT weapon_forge.add_procurement, which is the forge's own
+    # answer to this gap. That helper re-reads the blue bank off the view, so
+    # it cannot see the blue the two branches above just committed: on a
+    # 200-blue night it watched the EMP take all 200 and then bought a snap
+    # with the same money, and it does not consult the 600 arsenal cap at all.
+    # Both are only invisible until the engine refuses the build.
+    #
+    # A native branch keeps one budget in one place — the same blue_total,
+    # held_weapon_blue and _room_for the EMP and chaff moved through.
+    #
+    # It sits BEFORE the probe magazine on purpose. Probes are 250 credits
+    # each and the top-up builds toward four, so a weapon bought after them is
+    # handed an empty wallet.
+    if weapons_enabled and snap_stock >= dials.snap_stockpile_cap:
+        descriptors.append(
+            f"SNAP rack full ({snap_stock}/{dials.snap_stockpile_cap}) — "
+            "fire it before buying another"
+        )
+    elif weapons_enabled and _afford_snap():
+        actions.append({"a": "build_snap", "count": 1})
+        remaining -= snap_credit_cost
+        blue_total -= snap_blue_cost
+        held_weapon_blue += snap_blue_cost
+        descriptors.append(
+            f"built SNAP ({snap_blue_cost} blue, rack {snap_stock} < "
+            f"{dials.snap_stockpile_cap}) — the cheapest charge on the board "
+            "in blue, and the only one that resolves ABOVE the hour's vision "
+            "snapshot, so it denies a drop the same night it fires"
+        )
+    elif weapons_enabled:
+        short = (
+            f"blue {blue_total}/{snap_blue_cost}"
+            if blue_total < snap_blue_cost
+            else (
+                f"arsenal cap ({held_weapon_blue}/{weapon_blue_cap} blue held)"
+                if not _room_for(snap_blue_cost)
+                else f"credits {remaining}/{snap_credit_cost}"
+            )
+        )
+        descriptors.append(f"wanted a SNAP and could not afford it ({short})")
 
     # Priority 4: top the probe magazine up. A flat "build 2" ran dry and
     # left harvesters unable to hot-drop, so top up toward the target in

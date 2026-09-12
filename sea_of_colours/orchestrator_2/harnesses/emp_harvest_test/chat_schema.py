@@ -54,6 +54,32 @@ _MOVE_ITEM = {
     },
 }
 
+
+def _with_declared_weapon_verbs(move_item: dict) -> dict:
+    """Add the verbs of every declared play, keeping the ones already here.
+
+    Deliberately NOT ``weapon_forge.widen_schema``. That helper rebuilds the
+    enum as ``["drop", "step", "pickup", "probe"] + declared verbs``, and this
+    fork does not declare an EMP play — its EMP is the hand-built four-beat
+    BLIND_SCORCH, not a forge play. Calling the helper would therefore delete
+    ``emp_launch`` from the enum, and by the note above that is a hard wall:
+    the fallback mover would silently stop being able to fire the one weapon
+    this seat was built around, and it would look like the model refusing.
+
+    Union, never replace.
+    """
+    from . import weapon_plays
+
+    have = list(move_item["properties"]["a"]["enum"])
+    for verb in sorted({p.wire_verb for p in weapon_plays.PLAYS}):
+        if verb not in have:
+            have.append(verb)
+    props = {**move_item["properties"], "a": {"type": "string", "enum": have}}
+    return {**move_item, "properties": props}
+
+
+_MOVE_ITEM = _with_declared_weapon_verbs(_MOVE_ITEM)
+
 # v11 STRATEGY JOURNAL: two extra agent-authored strings on the plan pass.
 #   * ``intent``     — 1-2 sentences: what the agent is trying to do tonight +
 #                      why. Saved to the journal and shown back next night.

@@ -16,7 +16,8 @@ from __future__ import annotations
 import pytest
 
 from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
-    agency, chat_schema, doctrine, orbit_policy, packager, prompt, scorch,
+    agency, chat_schema, doctrine, last_night, orbit_policy, packager, prompt,
+    scorch, weapon_plays,
 )
 from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test.orbit_policy import (
     OrbitDials, plan_orbit_actions,
@@ -518,11 +519,11 @@ def test_the_shaped_play_gives_its_harvester_back_if_it_cannot_probe():
 # ── the EMP gets first call on the change ─────────────────────────
 
 
-def _buy_view(credits, blue, *, probes=0, emp=0):
+def _buy_view(credits, blue, *, probes=0, emp=0, chaff=0, snap=0):
     return {
         "orbit": {
             "credits": credits, "probe_stock": probes,
-            "weapon_stock": {"emp": emp, "chaff": 0},
+            "weapon_stock": {"emp": emp, "chaff": chaff, "snap": snap},
             "weapons_enabled": True, "blue_purity_total": blue,
         },
         "my_assets": [{"id": "h0", "kind": "harvester", "state": "orbit"}],
@@ -573,11 +574,18 @@ def test_a_harvester_is_still_built_when_both_fit():
 
 
 def test_nothing_is_reserved_when_the_blue_is_not_there():
-    """No blue means no salvo, so the credits must flow to probes as before."""
-    actions, why = orbit_policy.plan_orbit_actions(_buy_view(1000, 150))
+    """No blue means no charge, so the credits must flow to probes as before.
+
+    The blue here is 50 rather than the 150 this test used to carry. 150 was
+    "too poor for a weapon" while the EMP at 200 was the only thing the seat
+    could buy; a snap is 100, so 150 now buys one and the test was measuring
+    a seat that had gone shopping. Below the cheapest charge on the board is
+    the condition it was always trying to describe.
+    """
+    actions, why = orbit_policy.plan_orbit_actions(_buy_view(1000, 50))
     assert [a["a"] for a in actions] == ["build_probe"]
     assert next(a for a in actions if a["a"] == "build_probe")["count"] == 4
-    assert "blue 150/200" in why, "say which side fell short"
+    assert "blue 50/200" in why, "say which side fell short"
 
 
 def test_the_shortfall_message_names_the_side_that_actually_failed():
@@ -587,10 +595,24 @@ def test_the_shortfall_message_names_the_side_that_actually_failed():
 
 
 def test_a_full_rack_reserves_nothing():
+    """A rack with nothing left to buy hands its whole wallet to the probes.
+
+    Every weapon is at cap, not just the EMP. With three weapons declared, an
+    EMP-only full rack no longer means "buying is finished" — the seat would
+    correctly go on to a chaff and a snap, and the probe count this test is
+    really about would drop for a reason that has nothing to do with reserves.
+    """
+    d = orbit_policy.DEFAULT_DIALS
     actions, _why = orbit_policy.plan_orbit_actions(
-        _buy_view(1000, 400, emp=orbit_policy.DEFAULT_DIALS.emp_stockpile_cap),
+        _buy_view(
+            1000, 400,
+            emp=d.emp_stockpile_cap,
+            chaff=d.chaff_stockpile_cap,
+            snap=d.snap_stockpile_cap,
+        ),
     )
-    assert not [a for a in actions if a["a"] == "build_emp"]
+    assert not [a for a in actions if a["a"].startswith("build_")
+                and a["a"] != "build_probe"]
     assert next(a for a in actions if a["a"] == "build_probe")["count"] == 4
 
 
@@ -719,3 +741,257 @@ def test_the_whole_shape_survives_its_own_cloud_in_the_simulator():
     )
     lift = next(f for f in mine if f.get("tag") == "pickup")
     assert "banked 3 parcel" in str(lift.get("caption") or "")
+
+
+# ── three weapons, one budget ─────────────────────────────────────
+#
+# This seat bought chaff from the day it was written and had no way to fire
+# it: `chaff_flare` appeared nowhere but the last-night log reader, so every
+# purchase was 300 blue — half the arsenal cap — on a charge with no exit from
+# the rack. Adding the snap and chaff plays fixed that and introduced a new
+# risk in its place, which is what most of these pin: three weapons sharing
+# one 600-blue ceiling, where over-buying any of them prices out another.
+
+
+def test_one_of_each_weapon_fits_the_arsenal_cap_exactly():
+    """EMP 200 + chaff 300 + snap 100 is 600, and the cap is 600.
+
+    There is no slack anywhere in this budget, which is why every stockpile
+    cap is 1. Pinned against the engine's own prices so a rebalance fails here
+    rather than silently in a season.
+    """
+    from sea_of_colours.game.weapons import (
+        BLUE_COST_BY_KIND, WEAPONISED_BLUE_CAP,
+    )
+    d = orbit_policy.DEFAULT_DIALS
+    held = (
+        d.emp_stockpile_cap * BLUE_COST_BY_KIND["emp"]
+        + d.chaff_stockpile_cap * BLUE_COST_BY_KIND["chaff"]
+        + d.snap_stockpile_cap * BLUE_COST_BY_KIND["snap"]
+    )
+    assert held <= WEAPONISED_BLUE_CAP, (
+        f"the caps want {held} blue of ordnance against a {WEAPONISED_BLUE_CAP}"
+        " ceiling — the engine will refuse the last build and the seat will "
+        "never learn which weapon it lost"
+    )
+
+    actions, _why = plan_orbit_actions(_buy_view(2000, WEAPONISED_BLUE_CAP))
+    bought = {a["a"] for a in actions}
+    assert {"build_emp", "build_chaff", "build_snap"} <= bought
+
+
+def test_the_orbital_never_commits_the_same_blue_twice():
+    """Each weapon must be priced against the blue the others already took.
+
+    The forge's own add_procurement re-reads the bank off the view, so it
+    could not see what the branches before it had spent: on a 200-blue night
+    it watched the EMP take all 200 and then bought a snap with the same
+    money. The engine refuses the second build, so the cost is not a crash —
+    it is a seat that believes it is armed and is not.
+    """
+    from sea_of_colours.game.weapons import BLUE_COST_BY_KIND
+
+    for blue in (100, 150, 200, 300, 400, 500, 600, 900):
+        actions, _why = plan_orbit_actions(_buy_view(3000, blue))
+        spent = sum(
+            BLUE_COST_BY_KIND[a["a"][len("build_"):]]
+            for a in actions
+            if a["a"][len("build_"):] in BLUE_COST_BY_KIND
+        )
+        assert spent <= blue, (
+            f"planned {spent} blue of ordnance out of a {blue} bank"
+        )
+
+
+def test_a_snap_is_not_bought_when_only_the_credits_are_missing():
+    """Name the side that actually fell short, as the EMP branch does."""
+    actions, why = plan_orbit_actions(_buy_view(0, 600))
+    assert not [a for a in actions if a["a"] == "build_snap"]
+    assert "credits 0/250" in why
+
+
+# ── the plays are wired all the way to the wire ───────────────────
+
+
+def test_the_fork_keeps_its_own_emp_compiler():
+    """weapon_plays.py must never declare an EMP play.
+
+    `weapon_forge.packers()` returns one packer per declared weapon and the
+    dispatch hook is a dict update, so declaring an EMP play replaces this
+    fork's four-beat BLIND_SCORCH — salvo, probe, drop into the hole, comb
+    deferred to hour nine — with the forge's generic one-beat salvo. The rack
+    would still empty and the log would still show a salvo, so the loss would
+    only ever show up as a lower score.
+    """
+    assert "emp" not in {p.weapon for p in weapon_plays.PLAYS}
+    assert packager._DISPATCH["emp"] is packager._pack_emp
+
+
+def test_the_model_is_allowed_to_emit_every_weapon_verb():
+    """The move enum is a hard wall: no verb, no play, and no error either."""
+    enum = chat_schema._MOVE_ITEM["properties"]["a"]["enum"]
+    for verb in ("emp_launch", "snap_launch", "chaff_flare"):
+        assert verb in enum, f"the model physically cannot emit {verb}"
+
+
+def test_widening_the_schema_never_drops_the_emp_verb():
+    """The regression the union in chat_schema.py exists to prevent.
+
+    `weapon_forge.widen_schema` REBUILDS the enum as the four base verbs plus
+    the declared ones. This fork declares no EMP play, so calling it directly
+    would delete `emp_launch` and silently disarm the fallback mover on the
+    one weapon the seat was built around.
+    """
+    from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
+        weapon_forge,
+    )
+    naive = weapon_forge.widen_schema(chat_schema._V7_MOVE_ITEM)
+    assert "emp_launch" not in naive["properties"]["a"]["enum"], (
+        "if this starts passing, weapon_plays.py has grown an EMP play and "
+        "test_the_fork_keeps_its_own_emp_compiler is the one to read"
+    )
+    assert "emp_launch" in chat_schema._MOVE_ITEM["properties"]["a"]["enum"]
+
+
+def test_every_weapon_the_seat_holds_is_named_in_the_rack_block():
+    """A weapon absent here is one the night phase plans as if it lacked."""
+    block = prompt.format_rack_block(
+        {"orbit": {"weapon_stock": {"emp": 1, "chaff": 1, "snap": 1}}},
+    ).lower()
+    for weapon in ("emp", "snap", "chaff"):
+        assert weapon in block
+    assert prompt.format_rack_block(
+        {"orbit": {"weapon_stock": {"emp": 0, "chaff": 0, "snap": 0}}},
+    ) == "", "an empty rack still says nothing"
+
+
+def _weapon_board(weapon: str) -> dict:
+    """A board rich enough for the snap and chaff targeting modes to fire.
+
+    Three shapes are load-bearing, each added after a play was reported broken
+    by a board that merely looked complete: a redsign with real ``cells`` (the
+    smear is read off the view, so a region without them returns no targets),
+    a rival eye close enough to the smear centre to be its finder, and a PURE
+    inside that smear for ``contested_pure`` to contest.
+    """
+    smear = [[x, y] for x in range(18, 25) for y in range(18, 24)]
+    return {
+        "orbit": {
+            "weapon_stock": {"emp": 0, "chaff": 0, "snap": 0, weapon: 1},
+            "harvesters": [{"id": "harvester_p2"}],
+            "probes": 4,
+        },
+        "my_assets": [
+            {"kind": "harvester", "state": "orbit", "id": "harvester_p2"},
+        ],
+        "grid": {"width": 32, "height": 32},
+        "probe_stock": 4,
+        "redsign": [
+            {"cells": smear, "mine": False, "center": [21, 20], "x": 21, "y": 20},
+        ],
+        "red_tiles": [{"x": 21, "y": 20, "purity": 255}],
+        "enemy_probes": [{"x": 22, "y": 20}],
+        "hud": {"day": 2, "season_day_cap": 7},
+        "meta": {"player": "p1"},
+    }
+
+
+@pytest.mark.parametrize("weapon", ["snap", "chaff"])
+def test_a_declared_play_compiles_to_a_move_the_engine_accepts(weapon):
+    """The whole chain in one assertion: rack -> menu -> payload -> wire.
+
+    Every rung above this one can pass while the seat still fires nothing.
+    `check_wiring` proves `_DISPATCH` has a key for the kind; it does not call
+    what it finds there, so a packer whose signature does not match the call
+    site passes every check and raises the first time the model picks the play.
+
+    The wire shapes are pinned against `game/policy.py`, which accepts
+    `snap_launch` with `at` as a single `[x, y]` and `chaff_flare` with no
+    `at` at all. A salvo's nested `[[x, y], ...]` is refused here by name.
+    """
+    from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
+        weapon_forge,
+    )
+    view = _weapon_board(weapon)
+    options = weapon_forge.build_options(
+        view, (), option_cls=agency.Option, present=[],
+    )
+    assert options, f"a {weapon} in the rack offered no play"
+
+    for oid, opt in options.items():
+        pk = packager._Packer(view)
+        packager._DISPATCH[opt.kind](pk, opt.payload or {})
+        fired = [m for m in pk.moves if m.get("a") != "wait"]
+        assert fired, f"{oid} compiled to no move at all"
+        shot = fired[0]
+        if weapon == "snap":
+            assert shot["a"] == "snap_launch"
+            at = shot["at"]
+            assert len(at) == 2 and all(isinstance(v, int) for v in at), (
+                f"{oid} aimed at {at!r} — SNAP hits ONE cell and the engine "
+                "refuses a nested list by name"
+            )
+        else:
+            assert shot["a"] == "chaff_flare"
+            assert "at" not in shot, "chaff takes no target"
+
+
+def test_a_weapon_option_is_priced_in_what_the_rival_loses():
+    """The reason the seat bought snaps for six seasons and fired none.
+
+    The menu prints a structured `yield:` line and tells the model to rank on
+    it. A weapon banks nothing, so the ordinary line reads
+    `red ~+0 · blue 0 · green 0` — and next to a grab worth several hundred
+    red, a denial play loses every comparison it is in. The rationale above it
+    can be a thousand words of correct argument and it changes nothing,
+    because the argument is not the axis being ranked.
+
+    Live evidence before the fix: the seat held a snap on 21 planning turns,
+    was offered one on 9 of them, and fired it 0 times.
+    """
+    from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
+        weapon_forge,
+    )
+    view = _weapon_board("snap")
+    options = weapon_forge.build_options(
+        view, (), option_cls=agency.Option, present=[],
+    )
+    assert options
+    for oid, opt in options.items():
+        line = (opt.payload or {}).get("denial_yield") or ""
+        assert line, f"{oid} carries no denial yield, so it renders as ~+0"
+        # Render it the way the prompt does, or the payload could carry a
+        # perfectly good denial line that the menu never prints — which is
+        # exactly the bug this pins.
+        econ = {"yield": {}, "crush": {}, "risk": ("LOW", "nothing in view"),
+                "walk": 0}
+        text = "\n".join(agency._econ_detail_lines(opt, econ))
+        assert "red ~+0" not in text, (
+            f"{oid} still prices at zero on the line the model ranks on"
+        )
+        assert "DENIAL" in text or "RIVAL" in text, (
+            f"{oid} renders no denial framing: {text!r}"
+        )
+
+
+def test_an_empty_rack_offers_no_weapon_play():
+    """The seat must not be invited to fire a charge it does not hold."""
+    from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
+        weapon_forge,
+    )
+    view = _weapon_board("snap")
+    view["orbit"]["weapon_stock"] = {"emp": 0, "chaff": 0, "snap": 0}
+    assert not weapon_forge.build_options(
+        view, (), option_cls=agency.Option, present=[],
+    )
+
+
+def test_a_snap_that_fires_appears_in_the_seats_own_log():
+    """`snap_launch` was in neither tag set, so the hour simply went missing.
+
+    A seat that cannot see its own shot reads back a night in which it never
+    fired, and re-plans the play it already made.
+    """
+    assert "snap_launch" in last_night._OWN_ACTION_TAGS
+    assert "snap_launch" in last_night._PUBLIC_ORBITAL_TAGS
+    assert "chaff_flare" in last_night._OWN_ACTION_TAGS

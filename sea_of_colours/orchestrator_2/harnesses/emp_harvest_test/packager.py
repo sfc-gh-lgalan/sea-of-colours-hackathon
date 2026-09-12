@@ -31,6 +31,7 @@ from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
     option_economics as econ,
 )
 from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import scorch
+from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import weapon_forge
 # The night's length in hours IS the queue cap (§3.10), and the splice in
 # ``flush_deferred`` has to respect it or a pickup falls off the end.
 from sea_of_colours.game.policy import MAX_MOVES
@@ -260,25 +261,12 @@ def _probe_priority(opt: Any) -> float:
 
 
 def _seam_wave_demand(opt: Any) -> int:
-    """How many harvesters a seam campaign commits (one per non-deny wave).
-
-    v13 — ``emp_only`` waves fire a salvo and commit NO harvester (case B's
-    H3 halo lock, case C's H3 hole-shape). Same for ``snap_only`` waves,
-    which fire a SNAP at a single cell (case C's H1 landing-block in
-    SNAP_BLOCK). Neither must count toward the demand or the campaign
-    will be pre-flight-rejected for lacking a unit it never wanted,
-    silently dropping the whole play. This was the seed-4242
-    SMASH_THEN_LOCK failure: 3 waves, but only 2 harvesters needed, and
-    the packager cut the campaign because it read demand as 3.
-    """
+    """How many harvesters a seam campaign commits (one per non-deny wave)."""
     payload = getattr(opt, "payload", None) or {}
     return sum(
         1
         for w in (payload.get("waves") or [])
-        if isinstance(w, Mapping)
-        and not w.get("deny_only")
-        and not w.get("emp_only")
-        and not w.get("snap_only")
+        if isinstance(w, Mapping) and not w.get("deny_only")
     )
 
 
@@ -576,12 +564,6 @@ class _Packer:
         self.emp_radius, self.emp_missiles, self.emp_cloud_hours = (
             scorch.specs(agent_view)
         )
-        # v13 — SNAP rack, kept alongside EMP for the same reason: a night
-        # phase that reads the rack must see every weapon or it will plan
-        # around a subset. Specs live on ``orbit.weapon_specs.snap``; the
-        # only one the packager actually needs is a boolean "have any" —
-        # the wire move is a single cell, radius 0.
-        self.snap_budget: int = scorch.stock(agent_view).get("snap", 0)
         self.scorched: Dict[Tuple[int, int], int] = {}
         self._friendly_fire_warned = False
         #: Walks held back until a cloud lifts. Flushed LAST, after the
@@ -732,39 +714,6 @@ class _Packer:
             f"{[list(c) for c in aim]} -> {len(self.scorched)} cells dark "
             f"until hour {clears_at}. That hour is spent; the seat does "
             "nothing else in it."
-        )
-        return True
-
-    def spend_snap(self, at: Tuple[int, int]) -> bool:
-        """Fire one SNAP round at a single cell. One slot, one hour hot.
-
-        v13 — SNAP resolves ABOVE the hour-start vision snapshot (§4.9.4).
-        That is the whole point of the weapon: a rival's H1 landing on the
-        cell is refused THIS hour, not next, because their landing checks a
-        live snapshot the SNAP already killed the probe under. The engine
-        does all of that; the packager just has to emit the wire move,
-        drain the rack, and note the friendly-fire footprint (one cell for
-        one hour). Sequenced early like the EMP salvo — the value of an
-        early SNAP is a landing denied, and a landing denied at H03 is
-        two hours the seat still has left to bank on.
-        """
-        if self.snap_budget <= 0:
-            return False
-        cell = _cell(at)
-        if cell is None:
-            return False
-        launch_hour = len(self.moves) + 1
-        self.moves.append({"a": "snap", "at": [cell[0], cell[1]]})
-        self.snap_budget -= 1
-        # Hot for the launch hour only (§4.9.4 — SNAP_CLOUD_HOURS = 1).
-        # A friendly harvester about to step / drop on this cell in the
-        # SAME hour is maimed exactly as the enemy would be, so note it.
-        self.note_friendly_fire(cell, launch_hour)
-        self.log.append(
-            f"SNAP away at hour {launch_hour}: one round at {list(cell)}. "
-            "The cell is hot for that hour only; a rival landing this hour "
-            "is refused (damaged in orbit, no outing spent), and any "
-            "harvester stepping onto it is crippled on the square."
         )
         return True
 
@@ -970,29 +919,6 @@ def _pack_seam(pk: _Packer, payload: Mapping[str, Any]) -> None:
         # which is the worst outcome on the board). Wrap the branch so a
         # broken wave logs and the seam pattern falls back to its remaining
         # (non-EMP) waves.
-        # v13 — snap_only seam wave. Fires ONE SNAP round at ``snap_at`` and
-        # commits no harvester. Used by SNAP_BLOCK to hot-mark a pure cell
-        # at H1 so a rival's H1 landing is refused (§4.9.4), then wave 2
-        # lands our own harvester on the (now cool) cell at H2.
-        if w.get("snap_only") and w.get("snap_at"):
-            try:
-                aim = _cell(w.get("snap_at"))
-                if aim is None:
-                    pk.log.append(
-                        f"seam wave {w.get('wave')} snap_only: no valid target"
-                    )
-                    continue
-                if not pk.spend_snap(aim):
-                    pk.log.append(
-                        f"seam wave {w.get('wave')} snap_only: rack empty — "
-                        "the SNAP block never fired; nothing prevents the "
-                        "rival's H1 landing this hour"
-                    )
-            except Exception as e:  # pragma: no cover — defensive
-                pk.log.append(
-                    f"seam wave {w.get('wave')} snap_only crashed ({e!r})"
-                )
-            continue
         if w.get("emp_only") and w.get("emp_launch_at"):
             try:
                 aim = [
@@ -1247,33 +1173,10 @@ def _pack_emp(pk: _Packer, payload: Mapping[str, Any]) -> None:
     )
 
 
-def _pack_snap(pk: _Packer, payload: Mapping[str, Any]) -> None:
-    """One SNAP round at a single cell (§4.9.4).
-
-    Wire shape: ``{"a": "snap", "at": [x, y]}`` — a bare cell, not a list.
-    The payload's ``target`` is normalised to that shape by ``_cell``.
-    SNAP_KILL and SNAP_STRIKE both funnel here; the difference is the
-    target-selection heuristic in agency.py, not the packager.
-    """
-    target = _cell(payload.get("target"))
-    if target is None:
-        pk.log.append(
-            f"cut SNAP: no valid target cell in payload {dict(payload)!r}"
-        )
-        return
-    if not pk.spend_snap(target):
-        pk.log.append(
-            "cut SNAP: rack is empty — a SNAP is bought in ORBIT, and you "
-            "cannot fire one you did not buy"
-        )
-        return
-
-
 _DISPATCH = {
     "seam": _pack_seam,
     "hotdrop": _pack_hotdrop,
     "emp": _pack_emp,
-    "snap": _pack_snap,  # v13 — SNAP round: one cell, one hour, above snapshot
     # v11 Phase-1 force-surfaced VALUE-PYRAMID grab — drop + contiguous walk,
     # identical wire shape to a juice chain, so it compiles through _pack_chain.
     "grab": _pack_chain,
@@ -1283,6 +1186,14 @@ _DISPATCH = {
     "supersede": _pack_supersede,
     "frontier": _pack_frontier,
 }
+
+# Snap and chaff compile through the forge's generic weapon packer. Note the
+# key set: ``packers()`` returns one entry per DECLARED play, and this fork
+# deliberately declares no EMP play, so ``"emp"`` above is NOT overwritten and
+# the four-beat BLIND_SCORCH keeps its own compiler. Declaring an EMP play in
+# weapon_plays.py would silently replace it here with a plain salvo — see the
+# header of that file.
+_DISPATCH.update(weapon_forge.packers())
 
 
 def _emp_footprint(
@@ -1498,6 +1409,12 @@ def pack_recipe(
     pk.log.extend(order_log)
     ordered, emp_log = _order_for_emp_cloud(ordered, agent_view)
     pk.log.extend(emp_log)
+    # Declared snap/chaff plays name the hour they need (both want hour one)
+    # and ``_pack_weapon`` REFUSES rather than slips if the hour is already
+    # spent. Sorting them to the front is legality, not preference, and it
+    # runs after the EMP resequence so a salvo still leads when both are on.
+    ordered, weapon_log = weapon_forge.order_for_weapon_hours(ordered)
+    pk.log.extend(weapon_log)
     # Fix 2.4, CORRECTED. This block used to hoist every harvester outing ahead
     # of every standalone probe, on the argument that a probe buys tomorrow
     # while an outing banks tonight. True as ADVICE, and not ours to impose:

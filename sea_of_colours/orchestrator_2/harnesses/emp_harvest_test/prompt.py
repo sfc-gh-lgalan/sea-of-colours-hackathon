@@ -31,7 +31,8 @@ from __future__ import annotations
 from typing import Any, List, Mapping, Sequence
 
 from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test import (
-    digest, doctrine, option_economics, out_of_grid, rules, scorch, world_view,
+    digest, doctrine, option_economics, out_of_grid, rules, scorch,
+    weapon_forge, world_view,
 )
 from sea_of_colours.orchestrator_2.harnesses.emp_harvest_test._v7.orbit_wishlist import (
     Wishlist,
@@ -171,7 +172,7 @@ def format_rack_block(agent_view: Mapping[str, Any]) -> str:
     weapon it cannot fire.
     """
     rack = scorch.stock(agent_view)
-    if rack["emp"] <= 0 and rack["chaff"] <= 0:
+    if rack["emp"] <= 0 and rack["chaff"] <= 0 and rack["snap"] <= 0:
         return ""
     radius, missiles, hours = scorch.specs(agent_view)
     lines = ["YOUR RACK (bought in orbit — spending it is a NIGHT move):"]
@@ -183,13 +184,38 @@ def format_rack_block(agent_view: Mapping[str, Any]) -> str:
             "it are DESTROYED; harvesters in it are disabled hour by hour. "
             "FRIENDLY FIRE IS ON."
         )
+    if rack["snap"] > 0:
+        # The seat held snaps and was never told. A weapon absent from this
+        # block is a weapon the night phase plans as though it did not own,
+        # which reads afterwards as the model declining a play it was never
+        # shown. The asymmetry is the part worth the words: SNAP resolves
+        # ABOVE the hour's vision snapshot and the EMP below it, so this is
+        # the only charge that denies a drop the same night it fires.
+        lines.append(
+            f"  SNAP x{rack['snap']} — one charge, ONE cell, fired at hour 1. "
+            "It kills the probe on that cell and damages a harvester there, "
+            "and because it resolves ABOVE the hour's vision snapshot, "
+            "killing the eye that lit a pure DENIES THE DROP IT WAS LIGHTING "
+            "TONIGHT. An EMP on the same cell in the same hour does not."
+        )
     if rack["chaff"] > 0:
-        lines.append(f"  chaff x{rack['chaff']}")
+        lines.append(
+            f"  chaff x{rack['chaff']} — cancels an hour for EVERY other "
+            "seat. Fired at hour 1 it takes the hour a rival would have "
+            "dropped on the pure they just lit."
+        )
     if rack["emp"] > 0:
         lines.append(
             "  -> The salvo costs ONE of your 21 hour-slots: you fire OR you "
             "move that hour, never both. Pick EMP_SCORCH / SCORCH_REDSIGN off "
             "the menu to spend one; a charge left in the rack scores nothing."
+        )
+    if rack["snap"] > 0 or rack["chaff"] > 0:
+        lines.append(
+            "  -> Same rule for these: pick the play off the menu (SNAP PLAYS "
+            "/ CHAFF PLAYS, at the top). Blue spent on a charge you never "
+            "fire is blue that scored nothing — settlement pays for shipped "
+            "RED, and an unfired charge is worth exactly zero."
         )
     return "\n".join(lines) + "\n"
 
@@ -1106,12 +1132,17 @@ def _assemble_doctrine(
     if scorch.stock(agent_view)["emp"] > 0:
         text += "\n\n" + doctrine.DOCTRINE_SCORCH
 
-    # v13 — DOCTRINE_SNAP gates on owning a SNAP charge, same as SCORCH gates
-    # on an EMP charge. Rung 1 for the third weapon shape: the LLM has to
-    # know how to spend what it holds. When ONLY SNAP is in the rack, this
-    # is the entire weapon doctrine the seat sees.
-    if scorch.stock(agent_view).get("snap", 0) > 0:
-        text += "\n\n" + doctrine.DOCTRINE_SNAP
+    # The same argument for the snap and the chaff, from weapon_plays.py.
+    #
+    # Emitted AFTER the BEWARE blocks above, and that ordering is the point.
+    # DOCTRINE_BEWARE_SNAP describes a snap as a thing that happens TO this
+    # seat, and it is the only snap text in the prompt — so a seat that has
+    # just bought one reads its own charge as a threat rather than a tool and
+    # leaves it in the rack. This carries the CORRECTIONS, and recency is
+    # what makes them land.
+    _weapon_doctrine = weapon_forge.doctrine_for(agent_view)
+    if _weapon_doctrine:
+        text += "\n\n" + _weapon_doctrine
 
     # FINAL NIGHT — supersede enemy probes. Gated to the ACTUAL final night
     # (A6): earlier nights must not see this or the agent starts declaring

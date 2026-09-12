@@ -78,15 +78,15 @@ def specs(agent_view: Mapping[str, Any]) -> Tuple[int, int, int]:
 
 
 def stock(agent_view: Mapping[str, Any]) -> Dict[str, int]:
-    """The seat's own rack. Rung 1: the night phase has to be able to see this.
-
-    v13 — SNAP (v1.36) joined the salvo family. Read alongside EMP + chaff
-    so every night phase that reads the rack sees the whole thing.
-    """
+    """The seat's own rack. Rung 1: the night phase has to be able to see this."""
     ws = (agent_view.get("orbit") or {}).get("weapon_stock") or {}
     return {
         "emp": int(ws.get("emp", 0) or 0),
         "chaff": int(ws.get("chaff", 0) or 0),
+        # The seat buys snaps now, and everything that asks "what do I hold?"
+        # asks here. Omitting the key does not report zero, it reports the
+        # weapon does not exist: the rack block would not print it and the
+        # menu gate would KeyError rather than decline.
         "snap": int(ws.get("snap", 0) or 0),
     }
 
