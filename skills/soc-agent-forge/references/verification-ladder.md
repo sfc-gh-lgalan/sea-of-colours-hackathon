@@ -55,7 +55,15 @@ things to know:
 
 One thing the lab cannot answer: whether the agent would *buy* the weapon. The
 lab stamps a rack rather than playing an orbit phase, so procurement is
-unmeasurable there. `soc season` is the blunt instrument for that.
+unmeasurable there.
+
+`check_wiring.py` is the cheap answer and the one to reach for first (v1.56):
+its procurement rung runs your fork's own `orbit.submit_orbit()` against a rich
+fixture and reports what it actually tried to buy. It used to force
+`weapons_enabled=True` and so passed forks that could never arm — if you are
+working from a memory of that rung being reliable, it wasn't. `soc season` is
+still the blunt instrument for procurement *under real economic pressure*,
+which is a different question from whether the buy is wired at all.
 
 ## Run a turn more than once
 

@@ -1249,9 +1249,31 @@ refunded. A `[mineRetired]` log line reports both counts.
 
 ---
 
-## 27. 🔴 (OPEN) The heuristic stopped choosing a seam in `two_seams_choose_one`
+## 27. ✅ (CLOSED, 2026-09-19) The heuristic stopped choosing a seam in `two_seams_choose_one`
 
-**Symptom:** `pytest` is one red at HEAD —
+**Status (2026-09-19):** **green at HEAD and closed as no-longer-reproducing.**
+
+```
+pytest 'tests/test_eval_scenarios.py::test_heuristic_passes_known_scenarios[two_seams_choose_one]'
+1 passed in 0.05s
+```
+
+Closed on evidence rather than on a fix: nothing in this entry was ever
+actioned, so the scenario was repaired in passing by later heuristic or
+pricing work and nobody came back to the log. Recorded that way
+deliberately — an entry that quietly starts passing is worth
+distinguishing from one somebody fixed, because we never established
+*which* change made the agent prefer the asserted seam, and that means we
+also never established that it prefers it for the right reason.
+
+The original investigation stands below, and the standing instruction in
+it still holds if this ever goes red again: **settle whether the
+scenario's expected cells are genuinely the better seam before loosening
+the assertion.** It exists to catch the heuristic wandering.
+
+---
+
+**Symptom (as logged):** `pytest` is one red at HEAD —
 `tests/test_eval_scenarios.py::test_heuristic_passes_known_scenarios[two_seams_choose_one]`,
 failing `HarvesterChainHits: hit 0/1 of 3 target cells`. The agent still
 plans a sane-looking night: it walks `harvester_p1` from `[12,13]` out to
@@ -2039,7 +2061,7 @@ UI fog question, not this one.
 | 24 | A same-hour EMP voided a rival's queued landing: the hour-start vision snapshot was taken after the pre-hour phase had already fired the salvo and destroyed the beacon (§3.9.7 ⇄ engine) | ✅ done (v1.28) | no |
 | 25 | A jackpot sat in trace (79% had no mass within 4.5), so "richer ground means warmer" was not a readable signal — new graded-deposit pass (§2.2). **Doubles map RED: pre-v1.29 scores are not comparable.** V12's `_ASSUMED_HALO_PURITY` fallback measured (reached on only 1% of seams, so never the knock-on it looked like) and retuned 55 → 105 | ✅ done (v1.29) | no |
 | 26 | A stale `mine_lay` reached the engine unfiltered (the v7 sanitiser never rejected it) and wasted a slot as a nameless "unknown action" — resolved by retiring the caltrop and refusing both tags by name (§4.9.4); old saves clear armed caltrops and refund unspent stock as blue | ✅ done (v1.31) | no |
-| 27 | `two_seams_choose_one` red at HEAD: the heuristic walks the other seam, so `HarvesterChainHits` sees 0/1. Predates the tutorial work; suspects are the three recent seam/jackpot pricing commits | 🔴 open | no |
+| 27 | `two_seams_choose_one` red at HEAD: the heuristic walks the other seam, so `HarvesterChainHits` sees 0/1. Predates the tutorial work; suspects are the three recent seam/jackpot pricing commits | ✅ closed 2026-09-19 — green at HEAD, no-longer-reproducing | no |
 | 28 | The tutorial modal never auto-opened again after one play: the shown-already set was keyed on reel names that repeat in every Basic game, so a returning player got a teaching mode that taught nothing. Now scoped per game id | ✅ done (v1.33) | no |
 | 29 | A camera move stranded the four pixel-anchored overlays on the previous board's geometry — `reanchorOverlays` was locked inside `applyMapZoom`. Now exposed and called every frame of the glide | ✅ done (v1.33) | no |
 | 30 | A rival's bounce in a simultaneous-drop pile-up was suppressed as a private landing (§3.15), so the viewer watched one lifter hit an empty square while the caption named the House it hit. §3.15 already discloses mutual destruction | ✅ done (v1.33) | no |
@@ -2048,7 +2070,7 @@ UI fog question, not this one.
 | 33 | `basic_crash` pushed in before the landing collision, so two converging orbital arcs both started off-screen. Hour one now plays wide, and the beat is repeated hand-cranked off the replay bar | ✅ done (v1.34) | no |
 | 34 | Every film close-up was a CSS transform on one live element inside a fixed layout, which reads as a rendering fault, drags four overlays out of alignment (issue 29) and can only ever point at the map. Replaced by a post-process crop over the recorded frame | ✅ done (v1.35) | no |
 | 35 | Fallout from 34: the caption is pinned to the bottom of the page, so a crop that keeps 492×308 of a 1280×800 frame left every close-up unnarrated. Caption now tracks the crop, and `say()` fails the shoot if it lands off the edge | ✅ done (v1.36) | no |
-| 36 | RULEBOOK §4.11 says a redsign persists after its seam is harvested out and depletion must be inferred; the engine retires it as `spent`. Design question, not a typo — flagged, not resolved | 🔴 open | no |
+| 36 | RULEBOOK §4.11 says a redsign persists after its seam is harvested out and depletion must be inferred; the engine retires it as `spent`. Design question, not a typo — flagged, not resolved | ✅ done, v1.33 — this row was stale; see entry 36, resolved as a docs/engine alignment | no |
 | 37 | The cell card called a harvested square "banking scores 0" three lines under its own `-100` score block. Stale note from before green was priced in the tooltip; green costs 100/parcel at settlement and entry harvests are compulsory | ✅ done (v1.37) | no |
 | 38 | On Snowflake, V12 loaded its opponent's STRATEGY JOURNAL as its own: `SOC_AGENT_MEMORY` is a hybrid table and a range predicate on the key column `kind` makes the scan drop the equality on `player`. Filter `kind` in Python instead; a non-key column is unaffected | ✅ done (v1.42) | no |
 | 39 | Station hover cards read day 1 all season on a page opened mid-game: the boot rewind parks `_currentDay` on the reel's first day and only a played night moved it. Live play now resolves the newest day with readings; replay still reads the cursor | ✅ done (v1.34) | no |
@@ -2711,10 +2733,10 @@ the copy is armed and `tabula_v12/orbit.py` is untouched. Pinned on the
 output of a mint rather than on the script's source, because the intent
 was never wrong — nothing checked what the copy came out as.
 
-**Not fixed here.** `check_wiring.py` still hardcodes
-`weapons_enabled=True`, so it continues to report green on a fork that
-cannot arm in play. It no longer hides *this* bug, but it is the same
-false green and wants its own fix.
+**Not fixed here.** `check_wiring.py` still hardcoded
+`weapons_enabled=True`, so it continued to report green on a fork that
+cannot arm in play. It no longer hid *this* bug, but it was the same
+false green and wanted its own fix — **#63, done in v1.56**.
 
 ---
 
@@ -2935,3 +2957,649 @@ happened looked beautifully order-independent from every seat. And no
 seat may own more than one replay frame in an hour — the promise
 `_advance_until_valid` makes, that nothing downstream re-checks, and
 that the night clock is derived from.
+
+---
+
+## 57. ✅ (DONE, v1.51) The station score never subtracted GREEN, all season
+
+**Status (v1.51):** Fixed. Reported as "green is not being discounted
+properly — it seems like we're waiting till the final night, or the
+`-100` lines are not appearing under the station scores". Both halves
+were real, and the first was a **wrong number**, not a missing caption.
+
+**Audit first, because the two halves photograph identically.**
+`backstage/probes/_audit_green_accounting.py` reads the persisted
+SHIPPED / HOARD tables for every finished season in `seasons/` — 88
+seats across 44 — and replays each running total against the parcels.
+
+The engine was never implicated: **88/88** on both checks. The results
+card's three lines reconstruct the total exactly, and
+`cumulative_shipped_score` matches the parcels. GREEN is charged once
+per parcel at the orbit that disposes it, as RULEBOOK §4.7 requires.
+
+**Root cause — one function, and its own comment stated the error.**
+`_osGetCumulativeScore` in `app.js` is the sole source for the station
+score readouts (`station.js` `_osUpdateScoresForDay`). It summed each
+day's `catapult.seats[seat].score_shipped` and nothing else, under the
+comment *"Green (solar jettison) is disposal and adds no score."* It is
+not neutral — it is −100 a parcel. So the readout ran high by the whole
+season's green charge and reconciled only at the closing snap to
+`final`, which is exactly what "waiting till the final night" looked
+like from the outside.
+
+Measured: **75 of 88 seats read too high**, worst **+1000**
+(`370800b7` p1). Season `f60c8a06` p1 **finished on −94** while its
+station showed 206 the whole way. Because the HUD scoreboard is seeded
+from `cumulative_shipped_score` (green included), the station beside it
+climbed past the correct total and finished above it — two numbers
+contradicting each other on one screen.
+
+Two more symptoms fell out of the same function. The DUSK **"+X" ship
+badge** is `cum(day) − cum(day−1)`, so it inherited the same blind spot.
+And the settlement payload's green line could never fire on **any**
+season, not merely rarely: it is priced off `vault_green_count`, which
+the audit found is **0 for all 88 seats** because settlement flushes the
+vault into SHIPPED before it is read.
+
+**Fix — no engine change, no new payload.** The per-night charge was
+already persisted, already on the wire and already half-read:
+`catapult_history[day].jettison.seats[seat].penalty`, sitting in the
+same per-day blob whose sibling `jettison.slot_assignments` `station.js`
+already renders as the flush lattice. Only `penalty` was ignored.
+
+- `_osGetCumulativeScore` now subtracts it, so every readout is net of
+  green at every beat. It stays a per-day **delta**, which is what that
+  sum wants — reaching for `compute_score_breakdown`'s whole-season
+  figure here would debit the same parcels twice.
+- New `_osGetDayGreenPenalty(day)` exposes one night's charge.
+- `_osShowGreenCharge(day)` pushes a `-N green` line at the launch that
+  charged it, reusing the season-closing fold's own line so a nightly
+  charge and a final one read identically.
+- `_osShowShipDeltas` adds the charge back, so the "+X" badge stays what
+  it claims to be (the RED coming in) instead of quietly netting to
+  "+0" on a night that shipped 400 and dumped four.
+- `_osPlaySettlement` no longer clears the stack on entry — the resolve
+  path had already cleared it, and the second clear threw away the final
+  night's green line a beat before the `+red` fire-sale stacked under it.
+
+The two green sources are **disjoint and cannot double-debit**: the
+nightly line bills parcels *disposed* (already in the running score, so
+it is a label only), the settlement branch bills any still *held* at
+close (not in the running score, so it tweens).
+
+**Verification:** `backstage/probes/_probe_green_lines.py` drives a real
+browser over a finished season, checks the station's running total
+against the wire for every day, and asserts the line reaches the DOM.
+On `c958be9f` it now ends 1320 / 3508 — the engine's finals — where
+before it ended 2020 / 3908, and renders `-200 green` at the day-2
+launch. A browser probe rather than a pytest because neither the
+arithmetic nor the caption is reachable from Python, and 80 engine-side
+scoring tests passed throughout — which is why this survived so long.
+
+---
+
+## 58. ✅ (DONE, v1.52) The results card could account for 42% of the weapons a season fired
+
+**Status (v1.52):** Fixed. Reported as "the final results screen is not
+recording weapon usage, and the effectiveness of said weapons,
+correctly", with a screenshot of `Ater Ursus` credited `EMP'd probes 1`
+beside a `// operations` block holding no `EMPs fired` row — a kill with
+no weapon to make it.
+
+**Audit.** `backstage/probes/_audit_weapon_reporting.py` over all 44
+finished seasons / 88 seats. **50 weapons fired, 21 printable:**
+
+| | bought | fired | card printed |
+|---|---|---|---|
+| SNAP | 70 | 29 | *no row existed* |
+| EMP | 36 | 14 | 14 |
+| CHAFF | 35 | 7 | 7 |
+
+**Root cause: one fact, two sources, and the card took the derived one.**
+Kills come from `combat_attrib`, written by the engine at the moment of
+the kill into persisted state. Fires came from
+`orbital_activity_by_day` — a tally `tally_orbital_activity` rebuilds
+*after the fact* by re-reading replay frame tags (`emp_launch` /
+`chaff_flare` / `snap_launch`). Two ledgers, different lifetimes, never
+reconciled. `league/stats.py` had already refused the derived one and
+reads `weapons_used`, noting `bought = weapon_stock + weapons_used` is
+exact because both start at zero.
+
+That choice also made weapon counts the one number on the card a crash
+could silently zero: replay frames are exactly what AGENTS.md says a
+hard crash under the buffered store loses, while `weapons_used` is game
+state.
+
+**Four defects, in the order a player met them.**
+
+1. **SNAP was unprintable, though never uncounted.** `perDefs` in
+   `app.js` had no `snaps_fired` and nothing emitted the key — yet the
+   engine has counted it since v1.38 (`_empty_activity_tally` carries
+   `"snaps"`, `tally_orbital_activity` bumps it on `snap_launch`) and
+   `activity_totals` already summed it. **The value was computed,
+   summed, then read by nobody.** The cheapest weapon, and the one the
+   room fires most, was the only one the card could not show.
+2. **8 seats showed a kill with no weapon beside it** — the live half of
+   the screenshot. `snap_probes` has had a kill-feed row since v1.50, so
+   the kill printed while defect 1 hid the fire: `c958be9f` p1 read *4
+   SNAPped probes* against operations that never mentioned a SNAP.
+3. **8 more showed a kill by a weapon they never fired — stale data, not
+   stale code.** Pre-v1.50 `_emp_sweep_destroy` credited `emp_probes`
+   unconditionally and the SNAP calls it, so those kills are frozen in
+   each season's `combat_attrib`. v1.50 fixed the code completely (one
+   SNAP path, and it does pass `stat="snap_probes"`; the tracker's guess
+   that a path still missed the override was **wrong**) but could not
+   retro-fix a played season. All 8 fired a SNAP and never owned an EMP.
+4. **No effectiveness figure existed at all**, only raw counts, so a
+   weapon fired to no effect read like one never bought — and the gap is
+   the interesting part: **41 of 70 SNAPs bought were never fired**, and
+   **62 of 88 seats** ended holding ordnance. Worse, `perDefs` hides
+   zero rows, and weapons are the rows whose *zero* is the finding, so
+   "bought three, fired none" rendered as no rows whatsoever.
+
+**Fix.**
+
+- `engine.py` sources all fires from `weapons_used`, and emits
+  `snaps_fired` at last.
+- New `ordnance` block: `{kind: {fired, bought}}`, keyed off
+  `sess.weapon_prices()` rather than a literal, so a season pricing a
+  weapon this build never heard of still reports it.
+- The card gains `// ordnance  fired / bought` (flagging `N unfired`)
+  and `// losses`; the weapons left `// operations`, whose zero-hiding
+  was the wrong behaviour for them.
+- **Historical reconciliation at render**, not a data migration: when a
+  seat is credited an EMP kill and the ledger says it fired no EMP, the
+  kill is shown as the SNAP it was. Only the unambiguous case moves — a
+  seat that fired both is left alone, because then the rows genuinely
+  cannot be told apart.
+
+**Two things found while in there.**
+
+- **`harvesters_lost` / `harvesters_emped` / `harvesters_damaged` /
+  `probes_lost` were computed and thrown away.** They live in the
+  payload's `combat` block, which `server/static/` never read — the card
+  was attacker-side only, so a season could cost a seat three harvesters
+  and the results screen would never say so. Now rendered as
+  `// losses`. **The block must not be deleted as a duplicate:**
+  `league/stats.py` ~145 reads `harvesters_lost` from it.
+- **A kill by a *decaying* EMP cloud belongs to nobody.** The hourly
+  sweep passes `owner="emp_field"` (`session.py` ~8223), so `_attrib`
+  files it under an attacker that is no seat and it lands on no card.
+  Latent — 0 occurrences in 44 seasons — but it credits the weather for
+  a weapon someone paid for. Left open deliberately; fixing it means
+  deciding whether a delayed kill is the firer's, which is a rules
+  question, not a reporting one.
+
+`mines laid` is **not** a bug: mines retired in v1.31 and
+`tally_orbital_activity` keeps the `mine_lay` branch on purpose so an
+archived season still reports them.
+
+**Verification:** the audit's `CARD AS SHIPPED` section builds the real
+payload through `get_endgame_summary` for every season and asserts no
+card contradicts itself — **88/88 seats clean**, where the same check
+found 16 before. Full suite 2060 passed (the 2 failures are BUG-10,
+stray league forks in the tree).
+
+---
+
+## 59. ✅ (DONE, v1.53) A lab seat's arsenal bar redrew as the source season's the moment you touched the scrubber
+
+**Status (v1.53):** Fixed. Reported as "you can have a weapon, but the
+pips on the station are not correct", from a turn-lab run whose ORDERS
+panel was offering `[ ✦ SNAP ] 1 held` beside a station bar that did
+not agree.
+
+**What it looked like.** Open a board armed — `soc lab`, or
+`turn.open_board(board_id, arms={seat: "snap"})` — and the bar is
+right. Nudge the replay scrubber one stop and it silently redraws as
+whatever that seat was carrying in the season the board was cut from.
+On the reproduction, a seat holding one SNAP (100 blue, one pip) drew
+**three** pips, and its rival, holding one chaff, drew **none**.
+
+**Root cause: the clone held two answers and the scrubber picked.**
+`_osArms` in `station.js` chooses between the live poll and the per-day
+`station_obs_by_day` snapshot on `_showingPast`, which is correct for a
+real season — replaying day 3, the honest reading is day 3's. A lab
+clone is the case where that reasoning breaks: its snapshots belong to
+*another game*, cut before the lab existed, while the rack was stamped
+onto the clone at open time by `turnlab/arms.py`. `arm()` wrote
+`weapon_stock` and left the inherited history alone, so the two
+disagreed and the cursor position decided which the player saw.
+
+Nastier than a blank bar, and why it survived so long: the wrong number
+is a *plausible* number. Three pips of ordnance is a real rack. Nothing
+about the bar says it is reading a different game.
+
+**Fix — at the source, not at the bar.** `arm()` now also restamps the
+public arsenal reading (§4.9.8) in every inherited `station_obs_by_day`
+entry for the seat it armed. Rewriting that history is not the liberty
+it sounds like: a clone is a throwaway with no past of its own, and
+what the lab poses is "this seat is holding this rack, on this night" —
+the scenery has to say so. Doing it here rather than in `_osArms` fixes
+every consumer of the snapshots at once, not just the pips.
+
+Two things it deliberately does not do. A seat that was **not** armed
+keeps its own history, which for it is genuinely true — the clone *is*
+that season up to the freeze. And a snapshot with no `arms` key at all
+is left alone rather than given one: no key means the season published
+no arsenal, and inventing one would put ordnance on the public readout
+of a board whose engine cannot fire it.
+
+**Verification:** `backstage/probes/_probe_arms_lab.py` arms both seats
+differently, reads the rendered glyphs from both viewing seats and then
+again after a scrub — it failed on all four scrubbed readings before
+and passes now. Pinned in pytest by
+`test_arming_also_corrects_the_inherited_arsenal_history` and
+`test_arming_does_not_invent_an_arsenal_on_a_weapons_off_season` in
+`turnlab/tests/test_lab.py`.
+
+---
+
+## 60. ✅ (DONE, v1.53) The replay's vision layer showed a probe's ground before the probe, and every seat's sight whoever you watched
+
+**Status (v1.53):** Fixed. Presentation only — no engine call, no rule,
+no constant. Four complaints from one session, all in
+`server/static/app.js`, all about the vision layer answering questions
+the viewer had not asked yet.
+
+**1. In OBS a probe's disc was open before the streak landed.** "Probe
+disks are visible (the tiles inside) even when the probe is midair. I
+know we know what's behind, technically, but i dont like this."
+
+*Root cause.* The reveal mask is a **fog delta**: `collectNewlyRevealedCells`
+diffs the viewer's dense cells against the previous frame and holds
+back every cell that flipped fog→visible, lifting them on the landing
+beat. The observer's cells contain no fog. So nothing ever flipped,
+`pendingMasks` came back empty every single frame, and the disc painted
+with the board while the streak was still in the air. The machinery was
+right; it was being asked a question that has no answer in OBS.
+
+*Fix.* `_revealSeat()` — measure the delta against the **acting** seat
+in OBS rather than the viewer. What a probe is about to reveal *to its
+owner* is exactly the ground that should wait for it to arrive, and it
+is a real fog delta. Threaded through as a new last argument to
+`collectNewlyRevealedCells`, so the probe streak and the harvester drop
+(which had the same hole) both get it.
+
+**2. The seat-coloured outline arrived with the frame.** "I don't like
+the area of the vision (by player color) appears before the probe
+lands." Same leak one layer up, and worse, because an outline is a hard
+edge: the ring around the new disc was drawn off the resolved frame, so
+the *shape* of what the probe was about to see announced itself before
+the probe got there.
+
+*Fix.* `_holdVisionBorder` / `_releaseVisionBorder` park those grid
+indices, keyed **by seat** so two seats overlapping the same ground
+don't punch a hole in each other's outline, and `_visionBands` subtracts
+them. `revealMaskedCells` grew an `onDone` that fires after the
+outermost ring has finished fading, not when the wave starts — the
+outline is the shape of the whole disc, so releasing it on the first
+beat would draw a finished edge over ground still coming out of fog.
+The all-live suppression test now counts liveness separately from the
+hold, or a hold would make an omniscient board look partial and bring
+back the useless board-rim rectangle.
+
+**3. Every seat's border was drawn whoever you were watching.** "In
+replay, all the player borders are visible, no matter what, even when
+not in obvs."
+
+*Root cause.* `_visionBands` took an early-return branch whenever the
+replay frame carried per-seat arrays, building a **solid, true** band
+for every active seat and never reaching the inference path below it.
+Picking a seat on the transport row therefore changed the fog
+underneath but not the outlines on top: you watched one House's board
+with all four Houses' true line of sight over it — and three of those
+four were things that seat never knew.
+
+*Fix.* That branch is now gated on the viewer actually being omniscient
+(`obs` / `both`), which is the one place every seat's true sight
+belongs. A single-seat replay view falls through to the same path live
+play uses: own sight solid, rivals only as the dashed inferred band,
+clipped to ground the viewed seat can see for itself.
+`_inferredRivalMasks` gained a `viewSeat` argument in the same edit —
+it excluded `MY_SEAT`, so opening p2's replay drew a dashed band around
+**p2's own** probes.
+
+**4. And then the dashed band blinked.** Follow-up once 3 shipped: "the
+view lines for opponent borders are only drawn at dusk?"
+
+*Root cause.* v1.22's rule was "only a probe standing in your LIVE
+sight counts", on the grounds that a remembered occupant may have moved
+on. Correct for a harvester, wrong for a probe. A seat's live footprint
+is small and sweeps hour by hour, so a rival probe plainly marked on
+the board dropped in and out of the inference as the viewer's own sight
+passed over it. Measured over one season's night, watching p1: the band
+was absent for two multi-hour stretches (ticks 18–26 and 54–58) in
+which p2 had two to five probes on the board the whole time, all of
+them sitting on echo tiles.
+
+*Fix.* `_rivalProbeIsKnownOn()`. A probe is the exception for two
+reasons: it does not **move**, which is the whole of the original
+objection, and its launch is **public** (§3.15) — the engine stamps a
+marker glyph onto the echo or fog cell it landed on and *prunes that
+marker when the probe dies or decays* (the `probe_launch_glyph` branch
+of `player_dense_view`). So the marker is not a memory the client is
+choosing to trust past its date; it is an engine-maintained statement
+that the probe is still there. Nothing here widens what is drawn — the
+band is still clipped to ground the viewer can see for itself — only
+**when**. Same season, same seat after the fix: a dashed band in 15 of
+15 sampled hours that had a rival probe on the board, up from 32 of 42.
+
+**Not a bug, for the record.** The same report guessed the lines were
+"computed on live, at dawn" and lost on winding back. They are not —
+the layer is a pure function of the painted frame and `paintVisionBorders`
+rebuilds it on every board paint. Scrubbing to a tick and returning to
+it reproduces the bands exactly, which the probe now pins. What looked
+like state was the blink in 4.
+
+**Verification:** `backstage/probes/_probe_probe_vision.py` — checks all
+four in a real browser: OBS draws one solid band per seat, each
+single-seat view draws exactly one solid and the rest dashed, the
+dashed band holds across the night rather than blinking, a tick
+reproduces itself after a wind-forward-and-back, and OBS holds ground
+back mid-flight (peak 49 cells — exactly one radius-4 disc).
+
+**5. And then OBS was holding it back with FOG, on a board that has
+none.** Immediately after 1 shipped: "when a probe lands in OBS we
+dont need to turn the squares into fog, as there is no fog — the
+animation should just be from low opacity OBS tile to the lit cells in
+a circle animation, like the normal probe landing."
+
+Correct, and the first fix earned it. A seat's mask is
+`.cell--probe-pending`, which paints `░░` over the cell in exactly a
+fog cell's colours — honest there, because the ground really is
+unseen. Reusing it in OBS invented a grey disc under every incoming
+probe and then dissolved it, which is a worse artefact than the leak
+it was fixing.
+
+The observer already says all three things through `data-obs-dim`
+(see #61), so the hold is now just "don't lift the dim yet":
+`collectObsRelitCells` puts the cell back on the step it was on and
+the reveal wavefront takes the attribute off, ring by ring, over a
+260ms transition. What you see is the disc coming up from dim to lit
+in a circle — which is what the pop always was, just no longer
+starting from a lie.
+
+It measures the **union** of the seats' sight rather than the acting
+seat's, because that is what the observer's board is painted from: a
+cell a rival already has eyes on is already lit, and dimming it so
+this probe could re-reveal it would put a dark ring around ground
+nothing happened to. That also retired the `_revealSeat` owner
+threading the first fix added to `collectNewlyRevealedCells` — OBS now
+has its own path and the seat path is back to measuring the viewer,
+which is the only seat it was ever about.
+
+Two traps it has to handle, both of which bite silently. With no
+previous frame there is nothing to diff, and the seat path's habit of
+erring towards over-masking ("masking too much only delays a pop")
+would blank the entire lit board, so that case holds nothing. And an
+OBS hold is an *attribute*, not a class, so `cancelLiveAnimations` had
+to learn to drop it — a scrub that abandoned a hold used to leave the
+cell dimmed permanently.
+
+**6. Three more, all visible in the same second of a season clip
+(v1.53).** Watching the reshot zoom-outs turned up a landing that did
+four things wrong in a row: a faint disc appeared where the probe was
+going to arrive, the terrain there flashed bright and went dark again,
+a seat-coloured square sat over the map for half a second, and the
+vision outline was drawn around ground that was still black. Four
+symptoms, four separate causes, none of them the one the eye suggests.
+
+*The flash was the hold animating itself on.* The 260ms opacity
+transition is keyed to `data-obs-held`, and the dim and the attribute
+were set together — so the cell, freshly painted live, spent a quarter
+of a second fading **down** to fog before the reveal brought it back
+up. The hold has to arrive instantly and only the release may animate,
+so the attribute is now a second pass with a style flush between (see
+`collectObsRelitCells`). Measured: every held cell now reads `0.18`
+from the first sample instead of starting at `1`.
+
+*The faint disc was the hold being only a dim.* By the time it runs,
+the repaint has already swapped a fog tile for real terrain — and 18%
+of terrain is a pale wash, not fog. Never-seen ground therefore takes
+the fog block as well as the dim, which is the opposite of what item 5
+above concluded and is not a reversal of it: the block was wrong at
+**full strength**, not wrong in principle. Remembered ground still
+takes the dim alone, because echo and live are the same tile at two
+brightnesses. The probe's assertion inverted to match — a block is
+fine, a block with no dim on it is the bug.
+
+*The square was the landing ripple, which was never a ring.*
+`.probe-ripple` is a 0×0 element that animated a box-shadow **spread**,
+and a shadow fills outward from the border box, so 55px of spread on a
+zero-size box is a solid 110px block; `border-radius: 50%` resolves
+against that same zero box, so it was not even round. On a bright seat
+board nobody noticed a brief pale flash. On the observer's dim ground
+it read as the probe's disc opening early. It grows width/height with a
+coloured border now — `manual/manual.css` has drawn it that way all
+along (`.mn-probe-ripple`), so this is the engine catching up to its own
+documentation, not a new look.
+
+*The outline around dark ground was a per-seat hold on a union board.*
+`_visionHeldBySeat` is keyed by seat, which is right when each seat
+sees its own fog, and wrong in OBS where every band is drawn over tiles
+painted from the union: a hold filed under the acting seat left the
+other seats' bands free to enclose it. Two Houses opening ground in the
+same tick was all it took. OBS now holds flat (`_obsHeldCells`) so the
+outlines and the tiles cannot disagree by construction, and the probe
+pins it — for every held cell it asks each band `isPointInFill` and
+fails if any says yes. Reverted, that assertion reports 49 enclosed
+cells; with the fix, 0.
+
+---
+
+## 61. ✅ (DONE, v1.53) OBS painted remembered ground as live, and its readout said LIVE on every square on the board
+
+**Status (v1.53):** Fixed. Spotted while reviewing the new vision
+borders: "there is a bug where obvs view shows echo as live". Presentation
+only, and **older than the v1.53 work** — it dates from v0.9.9.
+
+**Root cause.** The observer's own dense cells are omniscient: no fog,
+no `stale`. So anything OBS says about *sight* has to be reconstructed
+from the seats' arrays, and two places reconstructed it wrong.
+
+`paintObsVisionMap` dimmed on `pc.kind !== "fog"` — the one test in the
+app that asks about sight without also asking about staleness.
+Everywhere else goes through `_cellIsLive` (`kind !== "fog" && !stale`),
+mirroring the engine's own branch in `player_dense_view`. A remembered
+tile is `kind: "terrain"` with `stale: true`, so it passed, and ground
+no House could currently see painted at exactly the same brightness as
+ground under a live probe.
+
+That is the worst place in the UI to lose the distinction. OBS is the
+view a season is watched in, and most of a mature board is remembered
+rather than seen — measured on `3acbd5b6` at nox 6, the two seats had
+157 cells in live sight and **304** in memory, so twice as much of the
+lit board was stale as was live. The only thing the dim still conveyed
+was "has anyone ever been here", which nobody was asking, and the
+vision outlines drawn over the top (which *do* use `_cellIsLive`) read
+as enclosing arbitrary patches of an already-bright map.
+
+The hover readout had the same bug by a different route: it takes its
+cell from `__cellStore.cells`, which in OBS is the omniscient array, so
+`c.stale` was never set and the badge said **LIVE on all 1120 squares**.
+
+**Fix.** One three-state answer, computed once and used by both.
+`paintObsVisionMap` builds an `obsVis` array — `2` some seat has live
+line of sight, `1` some seat remembers it and none can see it now, `0`
+no seat has ever seen it — emits it as `data-obs-dim="echo"` /
+`"fog"`, and parks it on the store so the tooltip can read the same
+answer instead of deriving its own.
+
+CSS gets three steps where it had one: full brightness, `--opa-obs-echo`
+(0.46), `--opa-obs-fog` (0.18). Fog keeps its old value — never-seen
+ground always looked right, it was the other two that were conflated.
+The new vars are separate from `--opa-stale` / `--opa-echo` / `--opa-fog`
+on purpose: those are terrain alphas *inside a seat's view*, this dims
+the whole cell, entities and all.
+
+The `FOG` badge keeps the full terrain readout under it, unlike the fog
+branch in a seat view. That is not an inconsistency — the observer
+really does know what is on the square, and the badge is telling you
+that no House does, which is what the board is saying too.
+
+**Verification:** `backstage/probes/_probe_obs_echo.py`. Ground truth
+comes from the **seat views themselves** — it reads each seat's own
+painted board at one tick and unions them, which spares the probe the
+scrub-stop-to-frame-index mapping the film rig deliberately refuses to
+reverse-engineer. At nox 6 of `3acbd5b6` the two seats' boards union to
+157 live / 304 echo / 659 never seen, and OBS now both decides and
+paints exactly that, cell for cell. It then hovers one cell of each
+state and checks the badge. Before the fix the 304 echo cells all
+painted live and all three hovers said LIVE.
+
+---
+
+## 62. ✅ (DONE, v1.53) A SNAP fired on Snowflake left no trace in the replay, because the table had no column for it
+
+**Status (v1.53):** Fixed. Reported as "look at veritas herald
+30e11d20, on day six P4 fires a snap, but the replay doesn't show the
+launch, why?". Not a presentation bug — a **persistence** one, and the
+most quietly destructive kind: every surface agreed the strike had
+happened, and the one thing missing was the thing the animation reads.
+
+**Root cause.** `SOC_REPLAY_FRAME` has a fixed column list. SNAP
+shipped in v1.36 and nobody added one. The engine wrote
+`frame["snap"]` and `frame["snap_clouds"]` exactly as it writes `emp` /
+`emp_clouds`, `snowpark_store.append_replay_frames` wrote only the
+columns it knew about, and the two VARIANTs went on the floor with no
+error, no warning and no row count to notice.
+
+What survived were the scalar columns — `tag='snap_launch'`, the
+caption, `attempted='snap_launch @(34,4)'`, the log line. So the LOG
+said a SNAP was fired, the scoreboard counted it, the ORDERS pane
+showed it spent, and the board did nothing. The FX is gated on
+`Array.isArray(frame.snap) && frame.snap.length`, which is correct and
+was simply never true.
+
+**Why it lasted four months.** The file store keeps frames verbatim, so
+`SOC_BACKEND=file` and every `seasons/` replay showed the strike
+perfectly. The bug existed only on the backend the league runs on, and
+the fastest way to check "does SNAP look right" is to run one locally.
+It played offline and vanished in competition.
+
+**Fix, in three parts.**
+
+1. **The columns.** `snap` and `snap_clouds` added to the CREATE TABLE
+   *and* the idempotent ALTER block in `snowflake/soc_schema.sql`, and
+   to `cols` / `json_keys` / the read-path parse list in
+   `snowpark_store.py`. Applied to the live account as two additive
+   `ADD COLUMN IF NOT EXISTS`. Note this had to ship together: the
+   moment the store names a column, a deploy that lacks it fails every
+   write.
+
+2. **The guard**, which matters more than the fix.
+   `tests/test_replay_frame_columns.py` walks the AST of
+   `replay_push_scene`, collects every key it can stamp on a frame, and
+   fails if one has no column and no explicit entry in a
+   `_NOT_PERSISTED` list with a reason. It also pins that `json_keys`
+   and `cols` agree (a key in one only is silently never written) and
+   that everything written as VARIANT is JSON-parsed on read (a
+   VARIANT read back as a *string* is worse than a missing one —
+   `Array.isArray` is false and the data looks present). The next
+   weapon fails here, at the point it is added.
+
+3. **The archive**, which cannot be repaired and can be reconstructed.
+   The payload was never written, so there is nothing to backfill —
+   but the *target* survives in `attempted`, and the rest of a SNAP is
+   fixed by the weapon: one missile, radius 0, the firing seat in
+   `owner`, a mark that burns for exactly one hour. `_snapEventsFor`
+   and `_snapCloudsFor` in `app.js` rebuild both from that when the
+   frame is tagged and the payload is null, so the two archived
+   strikes play. Live and future seasons take the real branch and are
+   untouched. What is genuinely lost is the aftermath: which probes
+   died and which harvesters were crippled were in the payload, so a
+   recovered strike plays the dart and the mark and skips the kill
+   crosses.
+
+   The cloud half is not optional garnish. The impact tile and the
+   scorch are deliberately the same element — the strike *is* the mark
+   arriving hot — so `paintSnapCloudOverlay`'s repaint clears the tile
+   the impact just laid. With no cloud behind it, a recovered launch
+   flashed and then wiped itself a frame later, which is how the first
+   cut of this fix behaved.
+
+**Blast radius.** Two frames, one session (`SELECT COUNT(*) ...
+WHERE tag='snap_launch'` over the whole account). SNAP is rarely
+fired, which is the only reason the loss is small; it is also why it
+took this long to be seen.
+
+**Verification:** `backstage/probes/_probe_snap_replay.py`, on the
+reported season and day. It presses **play** rather than scrubbing,
+because the FX is forward-playback only by design (a scrub re-fires
+nothing, or dragging the strip would set off every weapon in the
+night) — an earlier draft that scrubbed onto the frame proved only
+that scrubbing does what it says. It finds the stop by matching the
+weapon and the coordinate in the caption, since a `/replay` frame
+index is not a scrub stop; baselines the canvas count before the
+launch, because the board always has a canvas on it and an absolute
+count answers the wrong question; and asserts both that a missile flew
+and that the square ended up marked.
+
+---
+
+## 63. ✅ (DONE, v1.56) The wiring check green-lit forks that could never arm, by asking a question the game never asks
+
+**Status (v1.56):** Fixed in
+`skills/soc-agent-forge/scripts/check_wiring.py`. This is the "own fix"
+that #55 deferred.
+
+**Root cause.** The procurement rung — the first one, "can the agent
+even BUY the weapon?" — called the fork's planner directly and forced
+the flag on:
+
+```python
+acts, _why = op.plan_orbit_actions(view, weapons_enabled=True)
+```
+
+That asks *could this policy buy a weapon if something asked it to*.
+The question an attendee needs answered is *does this fork buy one*,
+and the two come apart at exactly one line. `orbit.py` passes
+`weapons_enabled=False` in the shipped baseline, deliberately — it is
+one of V12's two gaps, and the comment there tells the fork's owner
+this is "the line to change". So the check stepped around the single
+line the exercise is about.
+
+The consequence is the worst shape a check can have: it is **confidently
+wrong in the direction of "you're fine"**. Every rung below procurement
+tests the firing path, and those all pass on a fork with an empty rack —
+there is nothing about being unarmed that stops a verb being routed or a
+log line rendering. A team reads a column of green and plays the day
+without a shot.
+
+Not hypothetical. Of the 24 harnesses on disk still passing `False`,
+three wire a weapon verb, and **`glaxosmithkline_reaper`** is the whole
+bug in one entrant:
+
+| | old check (forced `True`) | what the orbit phase does |
+|---|---|---|
+| `glaxosmithkline_reaper` | buys `chaff` ✅ | buys **nothing** |
+
+**Fix.** The rung now runs the fork's own `orbit.submit_orbit()` and
+records what it tries to submit, with a spy substituted for the
+module's `soc_engine` so nothing is written anywhere. Three things fall
+out of going through the real path rather than around it:
+
+- the `weapons_enabled=` argument is now *observed*, not overridden;
+- `apply_economy_gate` is included, which runs after the planner and
+  can strip a buy on its own — also invisible to the old direct call;
+- `TABULA_V7_ORBIT_MODE` is pinned to `heuristic` for the duration,
+  because the regression-baseline mode submits an empty orbit and
+  returns before the planner is consulted at all. Left alone, a machine
+  with that set in its environment would read every fork as buying
+  nothing.
+
+The failure message names `weapons_enabled=` in the fork's own
+`orbit.py` as the first thing to check, since that is the fix in nearly
+every case, and prints the planner's rationale for when it is not.
+
+**If the orbit phase cannot be run, the rung fails.** It does not fall
+back to calling the planner directly. A check that quietly degrades to
+an easier question is precisely how this shipped, and the fallback
+would restore the bug for any fork whose orbit module was broken —
+the forks least able to afford a false green.
+
+**Note on the baseline.** Stock `tabula_v12` does not reach this rung;
+it stops at "a weapon is wired at all", because it carries no weapon
+verb. That is correct and unchanged — the baseline is disarmed on
+purpose.

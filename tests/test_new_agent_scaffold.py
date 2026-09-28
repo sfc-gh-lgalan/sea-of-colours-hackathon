@@ -13,6 +13,7 @@ would mutate the repo mid-suite, and the interesting failure modes
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 
@@ -77,11 +78,19 @@ def test_dry_run_reports_without_writing() -> None:
 
 
 def test_capitalisation_is_normalised_not_rejected() -> None:
-    """``--team Redwatch`` is a reasonable thing to type; lowercase it
-    rather than making someone read an error to learn the convention."""
-    r = _run("--team", "Redwatch", "--name", "Reaper", "--dry-run")
+    """``--team Unittest`` is a reasonable thing to type; lowercase it
+    rather than making someone read an error to learn the convention.
+
+    The team/name here is deliberately one nobody would mint for real
+    (v1.56). It used to be ``Redwatch``/``Reaper``, which is a fine
+    example right up until somebody at the event mints that agent — a
+    dry run still refuses a name that is taken, correctly, so a real
+    fork on disk turned this into a failure about capitalisation that
+    had nothing to do with capitalisation.
+    """
+    r = _run("--team", "Unittest", "--name", "Capitals", "--dry-run")
     assert r.returncode == 0, r.stderr
-    assert "redwatch_reaper" in r.stdout
+    assert "unittest_capitals" in r.stdout
 
 
 @pytest.mark.parametrize(
@@ -179,6 +188,51 @@ def test_a_minted_fork_reaches_both_the_game_and_the_lab() -> None:
         )
 
 
+def _forks_imported_by(path: Path) -> set[str]:
+    """Which harness packages a test file actually imports.
+
+    Parsed, not grepped, and the difference is not pedantry (v1.56).
+    This used to be a substring search for ``harnesses.<fork>`` over the
+    whole file, which cannot tell an import from a string that merely
+    looks like one — so ``test_agent_manifest.py`` failed the guard for
+    asserting on an *expected locator value* in a ``tmp_path`` fixture
+    that imports nothing at all. The moment a real fork was minted with
+    a name someone had already used as an example, a correct test went
+    red and the fix was to rename either the test's example or the
+    attendee's agent. Neither is a thing that should have to happen.
+
+    Dynamic imports count too: ``importlib.import_module`` with a literal
+    is the other way in, and the forge scripts use it.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+    except SyntaxError:
+        return set()
+
+    def _after_harnesses(dotted: str) -> str:
+        parts = (dotted or "").split(".")
+        if "harnesses" not in parts:
+            return ""
+        i = parts.index("harnesses")
+        return parts[i + 1] if i + 1 < len(parts) else ""
+
+    found = {""}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found |= {_after_harnesses(a.name) for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            found.add(_after_harnesses(node.module or ""))
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else (
+                fn.id if isinstance(fn, ast.Name) else "")
+            if name in ("import_module", "__import__") and node.args:
+                arg = node.args[0]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    found.add(_after_harnesses(arg.value))
+    return found - {""}
+
+
 def test_a_forks_tests_stay_inside_the_fork() -> None:
     """A fork may not put its tests in the shared suite (v1.43).
 
@@ -216,14 +270,40 @@ def test_a_forks_tests_stay_inside_the_fork() -> None:
         str(p.relative_to(_REPO))
         for path in shared
         for p in (_REPO / path).rglob("test_*.py")
-        if any(f"harnesses.{fork}" in p.read_text(encoding="utf-8",
-                                                  errors="ignore")
-               for fork in forks)
+        if _forks_imported_by(p) & forks
     )
     assert not strays, (
         "these live in the shared suite but import a fork directly; move "
         f"them into that fork's own directory: {strays}"
     )
+
+
+def test_the_fork_guard_reads_imports_not_prose(tmp_path: Path) -> None:
+    """The guard above must not fire on a fork's name in a string.
+
+    Pinned because the guard is the kind of check whose failure mode is
+    invisible: it went off on a correct test for two versions, and the
+    obvious "fix" each time was to edit the innocent test. A guard that
+    punishes the wrong file teaches people to work around it.
+    """
+    fork = "someteam_someagent"
+    pkg = "sea_of_colours.orchestrator_2.harnesses"
+
+    quoted = tmp_path / "test_quoted.py"
+    quoted.write_text(
+        f'LOCATOR = "{pkg}.{fork}.harness:run"\n'
+        f'# see {pkg}.{fork}/README.md\n'
+        f'def test_x():\n    assert LOCATOR.endswith(":run")\n',
+        encoding="utf-8",
+    )
+    assert _forks_imported_by(quoted) == set()
+
+    for source in (f"from {pkg}.{fork} import harness\n",
+                   f"import {pkg}.{fork}.harness\n",
+                   f'import importlib\nm = importlib.import_module("{pkg}.{fork}.harness")\n'):
+        f = tmp_path / "test_imported.py"
+        f.write_text(source, encoding="utf-8")
+        assert _forks_imported_by(f) == {fork}, source
 
 
 def test_a_minted_fork_can_buy_weapons() -> None:

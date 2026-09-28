@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -198,6 +199,65 @@ def _imp(label: str, mod: str) -> Any:
     return importlib.import_module(f"{PKG_ROOT}.{label}.{mod}")
 
 
+def _orbit_buys(label: str, view: Dict[str, Any]) -> Tuple[set, str]:
+    """What the fork's orbit phase actually tries to buy.
+
+    Driven through the fork's own ``orbit.submit_orbit``, and that is the
+    entire point of this function rather than a detail of it.
+
+    This rung used to call ``orbit_policy.plan_orbit_actions(view,
+    weapons_enabled=True)`` directly. Forcing the flag makes the check
+    ask "COULD this policy buy a weapon if something asked it to", when
+    the question an attendee needs answered is "does this fork buy one".
+    Those come apart at exactly one line: `orbit.py` passes
+    ``weapons_enabled=False`` in the shipped baseline — deliberately, it
+    is one of V12's two gaps and the comment there calls it "the line to
+    change". So a fork that had wired its weapon perfectly everywhere
+    else and never touched that line got a green procurement rung and
+    then played the whole season with an empty rack. The check was
+    reporting on a code path the game does not take.
+
+    Going through `submit_orbit` also picks up `apply_economy_gate`,
+    which runs after the policy and can strip a buy on its own — also
+    invisible to the old direct call.
+
+    Returns the action verbs it tried to submit, and the rationale.
+    """
+    orbit = _imp(label, "orbit")
+    captured: List[Dict[str, Any]] = []
+
+    class _Spy:
+        """Stands in for the engine, so nothing is written anywhere."""
+
+        @staticmethod
+        def submit_orbit_actions(store: Any, session_id: str, player: str,
+                                 actions: List[Dict[str, Any]]) -> Dict:
+            captured.extend(actions or [])
+            return {"ok": True, "captured": True}
+
+    had_engine = hasattr(orbit, "soc_engine")
+    real = getattr(orbit, "soc_engine", None)
+    was = os.environ.get("TABULA_V7_ORBIT_MODE")
+    try:
+        # The regression-baseline path submits an EMPTY orbit and returns
+        # before the policy is consulted at all, which would read here as
+        # "buys nothing" for any fork on a machine that happens to have
+        # this set.
+        os.environ["TABULA_V7_ORBIT_MODE"] = "heuristic"
+        orbit.soc_engine = _Spy
+        env = orbit.submit_orbit(None, "check-wiring", "p1", view) or {}
+    finally:
+        if had_engine:
+            orbit.soc_engine = real
+        if was is None:
+            os.environ.pop("TABULA_V7_ORBIT_MODE", None)
+        else:
+            os.environ["TABULA_V7_ORBIT_MODE"] = was
+
+    return ({str(a.get("a") or "") for a in captured},
+            str(env.get("rationale") or ""))
+
+
 def check(label: str, *, skip_llm: bool = False) -> Result:
     r = Result()
     root = HARNESSES / label
@@ -283,31 +343,47 @@ def check(label: str, *, skip_llm: bool = False) -> Result:
     # Rung zero, and the one that hid a real bug. Every firing rung can pass
     # while the rack stays empty all game, because the orbital is a separate
     # code path. Stock tabula_v12 can only emit build_chaff and build_emp.
+    # `blue_purity_total` is the key the orbital reads — a plausible
+    # `blue_purity` reads as 0 and fails a working agent.
+    # Deliberately RICH. The orbital spends on harvesters and probes
+    # before it reaches ordnance, so a lean fixture starves procurement
+    # and fails a working agent — the third false FAIL of this exact
+    # shape. The question is "does it buy", not "does it prioritise".
+    view = {"orbit": {"credits": 6000, "blue_purity_total": 3000,
+                      "weapon_stock": {}, "probes": 4,
+                      "harvesters": [{"id": "h1"}, {"id": "h2"}]},
+            "my_assets": [], "blue_tiles": [], "red_tiles": [],
+            # A mid-season day, because the economy gate this now runs
+            # through reads one and day 0 is not a night anyone plays.
+            "hud": {"day": 3}, "meta": {"day": 3}}
+    try:
+        bought, why = _orbit_buys(label, view)
+        failed = ""
+    except Exception as exc:                            # noqa: BLE001
+        bought, why = set(), ""
+        failed = f"{type(exc).__name__}: {exc}"
+
     for w in weapons:
-        try:
-            op = _imp(label, "orbit_policy")
-            # `blue_purity_total` is the key the orbital reads — a plausible
-            # `blue_purity` reads as 0 and fails a working agent.
-            # Deliberately RICH. The orbital spends on harvesters and probes
-            # before it reaches ordnance, so a lean fixture starves procurement
-            # and fails a working agent — the third false FAIL of this exact
-            # shape. The question is "CAN it buy", not "does it prioritise".
-            view = {"orbit": {"credits": 6000, "blue_purity_total": 3000,
-                              "weapon_stock": {}, "probes": 4,
-                              "harvesters": [{"id": "h1"}, {"id": "h2"}]},
-                    "my_assets": [], "blue_tiles": [], "red_tiles": []}
-            acts, _why = op.plan_orbit_actions(view, weapons_enabled=True)
-            bought = {a.get("a") for a in acts}
-            ok = f"build_{w}" in bought
-            r.add(f"procurement · orbital can buy {w}", ok,
-                  "" if ok else
-                  f"no build_{w} action with 900 blue and 900 credits in hand. "
-                  f"The play can never arm — every firing rung below may PASS "
-                  f"while the rack stays empty for the whole game. Emitted: "
-                  f"{sorted(bought) or 'nothing'}")
-        except Exception as exc:                        # noqa: BLE001
-            r.add(f"procurement · orbital can buy {w}", False,
-                  f"{type(exc).__name__}: {exc}")
+        if failed:
+            # Reported as a failure rather than skipped, and NOT fallen
+            # back to calling the policy directly: a check that quietly
+            # degrades to the easier question is how this rung came to
+            # pass forks that could not arm.
+            r.add(f"procurement · orbital buys {w}", False,
+                  f"could not run the fork's own orbit phase: {failed}")
+            continue
+        ok = f"build_{w}" in bought
+        r.add(f"procurement · orbital buys {w}", ok,
+              "" if ok else
+              f"the fork's own orbit phase submitted no build_{w} with 3000 "
+              f"blue and 6000 credits in hand. The play can never arm — "
+              f"every firing rung below may PASS while the rack stays empty "
+              f"for the whole game.\n"
+              f"  Submitted: {sorted(bought) or 'nothing'}\n"
+              f"  First thing to check is the `weapons_enabled=` argument "
+              f"in {label}/orbit.py, which the shipped baseline passes as "
+              f"False on purpose.\n"
+              f"  Rationale: {why[:160] or '(none)'}")
 
     # ── 1 · the schema wall ───────────────────────────────────────────────
     try:

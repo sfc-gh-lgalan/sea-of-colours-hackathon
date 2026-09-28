@@ -20,6 +20,21 @@ import pytest
 from sea_of_colours.orchestrator_2 import fork_collect
 
 
+@pytest.fixture(autouse=True)
+def _no_dev_machine_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run against stock git, not the organiser's (v1.56).
+
+    These fixtures build throwaway repos, so anything in a personal
+    ``~/.gitconfig`` leaks straight into them — ``commit.gpgsign = true``
+    being the one that bit, since the commits below then fail outright,
+    or worse, block on a passphrase prompt pytest has captured and
+    nobody can see. Hooks and commit templates get in the same way.
+    ``test_soc_push_race.py`` already does this; the two should match.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+
 # ── building repos to collect from ────────────────────────────────────
 
 def _run(cwd: Path, *args: str) -> None:
@@ -45,8 +60,15 @@ def _agent(root: Path, label: str, *, participants=("Ada",)) -> None:
 
 def _commit(root: Path, message: str) -> None:
     _run(root, "git", "add", "-A")
+    # Signing is off explicitly (v1.56). An organiser with
+    # `commit.gpgsign = true` in their global config inherits it here,
+    # and these throwaway repos then fail to commit — on a machine where
+    # the key needs a passphrase the suite hangs on a pinentry prompt
+    # nobody can see. The fixture's identity is already overridden for
+    # the same reason; this is the other half of that.
     _run(root, "git", "-c", "user.email=t@t", "-c", "user.name=t",
-         "commit", "-q", "-m", message)
+         "-c", "commit.gpgsign=false",
+         "commit", "-q", "--no-gpg-sign", "-m", message)
 
 
 @pytest.fixture()
