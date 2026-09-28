@@ -121,3 +121,40 @@ turnlab/data/*
 backstage/films/voice/models/
 backstage/films/voice/clips/
 backstage/films/voice/build/
+
+# The station beats' own season (backstage/films/.station-season/). A real
+# played season is ~200MB of replay frames, and it is reproducible: the
+# seed lives in make_trailer.py and `--stations` replays it if the
+# directory is missing. Keep the clips, not the store that made them.
+backstage/films/.station-season/
+
+# Forked agents (v1.56). Main carries the BASELINE only. A fork is one
+# team's work and lives in their own fork of this repo — that is the
+# whole point of `soc push`, and an agent landing here would hand
+# everyone pulling from upstream a conflict in someone else's code.
+#
+# Ignored rather than merely discouraged because `soc collect` and a
+# day's play leave a working tree full of other people's harnesses, and
+# a single `git add -A` then stages all of them. That has happened: 31
+# fork directories, 1,603 files, sitting in the index.
+#
+# Shipped harnesses are re-included by name, so adding one is a
+# deliberate edit here rather than something that drifts in.
+sea_of_colours/orchestrator_2/harnesses/*/
+!sea_of_colours/orchestrator_2/harnesses/tabula_v12/
+!sea_of_colours/orchestrator_2/harnesses/emp_harvest_test/
+
+# A league's own results (`soc cup`). One organiser's run of one day:
+# regenerable, and the bracket that matters gets published, not merged.
+/reports/league/
+
+# Trailer byproduct (v1.56). The trailer is not a repo artifact — the
+# finished cut gets uploaded, and everything that made it is scratch.
+# `server/static/media/` alone is 333MB of renders, and the scratch
+# tree beside it has reached 3.7GB.
+#
+# Note if you are wiring the landing page: `server/static/landing.html`
+# is the one thing that reads from media/, so a fresh clone has no hero
+# loop until someone re-shoots or drops the files in.
+/server/static/media/
+/weaponx/
