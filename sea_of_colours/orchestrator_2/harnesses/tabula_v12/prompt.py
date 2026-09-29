@@ -334,14 +334,20 @@ def format_weapon_geometry_block(
             f"standing there or stepping in is DAMAGED and harvests nothing; "
             f"a landing into it is REFUSED (stays in orbit, damaged, outing "
             f"unspent). One cell only — spreading across distinct cells beats "
-            f"it, re-timing does not.\n"
+            f"it, re-timing does not. A flare fired on the SAME hour does "
+            f"NOT stop it: the round outruns the jam and lands (and spends "
+            f"its charge). A chaff window ALREADY standing does stop it, "
+            f"charge kept.\n"
         )
     if could_chaff:
         out += (
             f"  CHAFF: cancels every OTHER seat's actions for "
             f"{CHAFF_DURATION_HOURS} consecutive hours. A pickup inside that "
             f"window is lost -> dawn-crash risk. It has no location — it is a "
-            f"seat-wide jam.\n"
+            f"seat-wide jam. ONE thing it does not stop: a SNAP declared for "
+            f"the very hour you fire outruns the flare and still lands. From "
+            f"the next hour on it is cancelled like everything else, so to "
+            f"jam a SNAP the window must already be UP.\n"
         )
     return out
 

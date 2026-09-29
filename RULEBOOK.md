@@ -1,7 +1,7 @@
 # Sea of Colours — Master Rulebook
 
-Version: 1.49
-Last updated: 2026-09-14
+Version: 1.57
+Last updated: 2026-09-29
 
 This is the single source of truth for the world, the fiction, and how
 play resolves. Every change is recorded in the [Changelog](#changelog) at
@@ -2372,10 +2372,19 @@ seconds.
   cloud cells.
 - **Order within an hour (RULEBOOK § "emp_first"):** EMP cloud
   decay (+ field sweep), then **chaff pre-emption (§4.9.5)**, then
-  EMP-launch pre-emption, then disable-set computation, then the
-  collision pre-passes (pass-through swap §3.6, simultaneous drop),
-  then regular dispatch. A launch at hour N is in effect for the same
-  hour's disable check.
+  **SNAP pre-emption (§4.9.4)**, then the **hour-start live-vision
+  snapshot**, then EMP-launch pre-emption, then disable-set
+  computation, then the collision pre-passes (pass-through swap §3.6,
+  simultaneous drop), then regular dispatch. A launch at hour N is in
+  effect for the same hour's disable check.
+
+  This is the canonical list — the one the engine follows and the one
+  code comments cite by the `emp_first` tag. The two middle stages
+  arrived with SNAP in v1.36 and were only ever written into §4.9.4 as
+  an "amended" copy, leaving this list two stages short of the truth
+  for four versions; corrected in v1.57. Which side of the vision
+  snapshot a weapon falls on is not bookkeeping — it is the whole
+  difference between SNAP and the EMP (§4.9.4).
 - **A jammed hour launches nothing (v1.14).** If hour N is covered by a
   chaff window — including one opened by a flare fired *at* hour N — the
   salvo does not fly: it is cancelled as `chaffed`, and the **charge
@@ -2407,11 +2416,13 @@ where it sits in the hour.
   now. `SNAP_RADIUS` is 0, which the same `2r(r+1)+1` formula the EMP
   uses turns into exactly one cell, so nothing special-cases it.
 - **It resolves FIRST — above the hour's vision snapshot.** This is the
-  weapon. Order within the hour (§4.9.3's "emp_first" list, amended):
-  cloud decay and field sweep, then chaff pre-emption, **then SNAP**,
-  then the hour-start live-vision snapshot, then EMP-launch pre-emption,
+  weapon. Order within the hour (the full list lives in §4.9.3): cloud
+  decay and field sweep, then chaff pre-emption, **then SNAP**, then
+  the hour-start live-vision snapshot, then EMP-launch pre-emption,
   then the disable set, then the collision pre-passes, then regular
-  dispatch.
+  dispatch. Sitting below chaff in that list no longer means chaff
+  cancels it (v1.57, above) — the two stages simply do not interact,
+  since nothing a flare does changes what a round hits.
 - **So it can deny a landing in the hour it kills the beacon.** A probe
   destroyed by a SNAP is destroyed *before* the hour's visibility is
   recorded, so a drop that square was lighting has no live sensor
@@ -2455,12 +2466,35 @@ where it sits in the hour.
   "outcome"}`, where `outcome` is `"crippled"` or `"landing_aborted"`.
   That split is the same one `emp` / `emp_hit` uses. The scoreboard
   credits the shooter under `snap_harvesters`, kept apart from
-  `harv_damaged` so a shot hull is never read as a rammed one.
+  `harv_damaged` so a shot hull is never read as a rammed one, and
+  beacons it destroys under **`snap_probes`** (v1.50), kept apart from
+  `emp_probes` for exactly the same reason. Before v1.50 the probe
+  kills went into `emp_probes`, because the SNAP reuses the EMP's
+  blast-sweep internally — so a seat that had never bought an EMP could
+  end a season credited with probes "EMP'd", and the one weapon most
+  agents actually fire was the one the kill-feed could not name.
 - **Friendly fire is on**, exactly as it is for the salvo. A SNAP put
   down on your own beacon kills your own beacon.
-- **A jammed hour launches nothing.** Chaff outranks SNAP the same way
-  it outranks the EMP (§4.9.5, v1.14): the round does not fly and the
-  charge stays in stock.
+- **It outruns a flare fired on the same hour — and only that
+  (v1.57).** SNAP is the one launch chaff does not simply cancel, and
+  the line is drawn where the fiction draws it:
+  - **A flare going up on hour N does not stop a SNAP declared for
+    hour N.** The round is away before the jam takes hold. It flies,
+    it does its damage, and because it fired it **spends its charge**.
+  - **A window already standing does stop it.** On the carry-over
+    hours of a flare fired earlier, a SNAP is cancelled as `chaffed`
+    like anything else and the **charge stays in stock** (§4.9.5). By
+    then there is no jam to outrun — you are inside it.
+
+  So chaff still answers a SNAP; it just has to be *up* rather than
+  going up, which means spending the flare a turn early on a guess.
+  Being first on a square is not being first in the hour, but being
+  fast enough is. (Before v1.57 chaff outranked SNAP outright, the
+  same way it outranks the EMP — inherited from v1.14's "a launch is
+  an action", which was written two versions before SNAP existed.)
+- **The salvo is not fast, and that is the difference between them.**
+  An EMP declared for the hour a flare goes up is still cancelled with
+  its charge intact (§4.9.3). Same board, same hour, opposite outcome.
 - **A seat that fired has spent its hour** (§3.10). No exception for
   being fast.
 - **Visibility:** open. The launch frame is public, and the cell carries
@@ -2539,12 +2573,24 @@ withdrawal has to take.
   for that launch hour, then both are jammed for the carry-over hours.
   (Pre-v0.9.16 the launcher used to be immune for the whole window.)
 - **A launch is an action, so chaff cancels launches too (v1.14).** On
-  any covered hour a queued `chaff_flare` or `emp_launch` is cancelled as
-  `chaffed` like anything else — but because the house never fired, the
+  any covered hour a queued `chaff_flare`, `emp_launch` or
+  `snap_launch` is cancelled as `chaffed` like anything else — but
+  because the house never fired, the
   **munition is not spent**: it stays in `weapon_stock` for a later hour
   or a later Nox. The slot is still burned (the row is consumed, not
   deferred), so the cancelled launch does not re-attempt when the window
-  lifts. Two consequences worth planning around:
+  lifts.
+
+  **One exception, and only one: a SNAP on the hour the flare itself
+  goes up (v1.57, §4.9.4).** "Covered" there means a window already
+  standing. A round declared for the launch hour outruns the flare,
+  flies, and spends its charge. Everything else on that hour —
+  including an `emp_launch`, and including the flare's own house — is
+  cancelled as normal. This bullet listed only chaff and the EMP until
+  v1.57, because it was written in v1.14 and SNAP did not ship until
+  v1.36.
+
+  Two consequences worth planning around:
   - **Chaff cannot be chained.** A second flare queued inside your own
     window is cancelled, not fired, so it neither extends the window nor
     renews your immunity. `CHAFF_DURATION_HOURS` is a hard ceiling on
@@ -3103,6 +3149,254 @@ SOC_BACKEND=memory python scripts/run_season.py --seed 1
 ---
 
 ## Changelog
+
+### v1.57 — 2026-09-29
+
+**A SNAP outruns a flare fired on the same hour.** One rule changed,
+in one direction, and it is the first time any launch has escaped
+chaff.
+
+Until now chaff cancelled a SNAP exactly as it cancels a salvo. That
+was never a ruling anybody made: SNAP shipped in v1.36 and simply
+inherited v1.14's "a launch is an action, so chaff cancels launches
+too" — a sentence written two versions before the weapon existed. The
+result sat badly with everything else §4.9.4 says, since SNAP's whole
+identity is that it is the *fast* one and resolves above the hour's
+vision snapshot for that reason, and yet it lost to a flare going up
+beside it.
+
+**The new rule, and where the line falls:**
+
+- A flare fired **on hour N** does not stop a SNAP declared for hour
+  N. The round is away before the jam takes hold — it flies, it does
+  its damage, and it **spends its charge**, because it fired.
+- A window **already standing** does stop it. On the carry-over hours
+  of an earlier flare the round is cancelled as `chaffed` and the
+  **charge stays in stock**, like any other jammed launch. There is no
+  jam to outrun once you are inside it.
+
+So chaff still answers a SNAP — it just has to be *up* rather than
+going up, which means committing the flare an hour early on a read
+rather than a reaction. The EMP is untouched: a salvo declared for the
+hour a flare goes up is still cancelled with its charge intact, and
+that asymmetry is now the clearest statement in the rules of what
+"fast" buys you.
+
+**Two documentation corrections shipped with it**, both pre-existing:
+
+- §4.9.3's `emp_first` ordering list — the canonical one, the one code
+  comments cite by that tag — was **missing two stages**. SNAP
+  pre-emption and the hour-start vision snapshot arrived in v1.36 and
+  were written only into §4.9.4 as an "amended" copy, so the list
+  presenting itself as authoritative had not matched the engine for
+  four versions.
+- §4.9.5's "chaff cancels launches too" bullet enumerated only
+  `chaff_flare` and `emp_launch`. It now names `snap_launch` as well,
+  along with the exception above.
+
+**Pinned at last.** `tests/test_chaff_precedence.py` had no SNAP case
+of any kind, so the old rule — asserted in §4.9.4 and load-bearing for
+any agent buying chaff — was guarded by nothing and could have flipped
+either way unnoticed. Both halves are now pinned there, together with
+the salvo *staying* stopped, since the edit worth catching later is
+one that widens "the fast weapon" into "weapons".
+
+### v1.53 — 2026-09-22
+
+**A session boots instead of appearing. No rule changed.** This is
+presentation only — no constant, formula or legal move is touched, and
+the engine is not involved. It is recorded here because it changes what
+the *first* thing a player sees is, and because it moves where a replay
+opens.
+
+Opening a game or a season used to show the page building itself: an
+empty grid, stations popping in, scores arriving late. Now a black
+curtain carrying the `sea_of_colours` wordmark holds until the board
+and seats are in hand, then lifts into a reveal — fog spreading outward
+from the centre of the map, and the stations teleporting in one after
+another, each hull ramping through `░▒▓█` in hot red before cooling to
+its seat colour.
+
+**The one behavioural change worth knowing.** A *finished* season now
+opens at **day 1** and plays from there. It used to park the scrubber
+at the last day and open the SEASON VICTOR sweep immediately, which
+meant a replay greeted you with its own ending. The results screen is
+unchanged and still reachable from `[ RESULTS ]`, and still fires on
+its own if you play a season through to the end. In-progress games are
+untouched — they still open live, on the current day.
+
+`?boot=0` skips the sequence entirely, which is what the film rig and
+the browser probes use — except the four season-start stills in the
+zoom-out supercut, which open on it and get there through
+`window.__socBootReplay`, the same `_bootRearm` + `_bootReady` pair
+NEW GAME uses. See `docs/IMPROVEMENTS.md` IMP-4 for the build notes,
+`backstage/films/README.md` for the shoot, and
+`backstage/probes/_probe_boot_animation.py` for the coverage.
+
+**Also in v1.53: a turn-lab seat's arsenal bar no longer redraws as the
+source season's rack when the scrubber moves (§4.9.8).** A lab clone
+inherited its per-day station history from the season it was cut from,
+and that history predates the rack the lab stamps on at open time — so
+a seat holding one SNAP could show three pips of somebody else's
+ordnance while the orbit panel still offered the SNAP. Arming now
+restamps the inherited public reading to match. Live games and real
+season replays are untouched; their history is their own.
+`docs/OUTSTANDING_ISSUES.md` #59 has the audit.
+
+**Also in v1.53: the replay's vision layer stopped answering questions
+that had not been asked (§3.11, §3.15).** Presentation only again, and
+four things at once. A probe's disc — the tiles and its seat-coloured
+outline — now waits for the probe to land instead of painting with the
+frame, in the observer view as well as a seat's; OBS was the hole,
+because the reveal is a fog delta and an observer has no fog to flip.
+Watching a **single seat** in a replay now draws that seat's sight and
+only that seat's: every House's true line of sight is the observer's
+privilege, and drawing all four over one House's fog made the borders
+useless for the one question they exist to answer. A rival still
+appears, as the dashed inferred band, clipped to ground the watched
+seat can see for itself. And that dashed band now **holds** rather than
+blinking hour to hour: a rival probe counted only while it stood in
+your live sight, which is the right rule for a harvester and the wrong
+one for a probe — a probe does not move, and §3.15 makes its launch
+public through an engine-maintained marker that is pruned when the
+probe dies. Nothing drawn is wider than before; some of it is drawn
+more of the time, and none of it earlier.
+`docs/OUTSTANDING_ISSUES.md` #60 has the audit. The observer's own
+version of the same beat followed: a probe's disc in OBS was being
+held back behind a **fog block**, on a board that has no fog, so an
+incoming probe grew a grey disc and then dissolved it. It now holds
+the cells at the dim they already had and lights them ring by ring,
+which is the animation a seat has always had, minus the invented fog.
+Watching the reshot season clips found four more faults stacked in the
+same half-second of a landing, and none of them was the one the eye
+suggested: the hold's own 260ms transition was animating it **on**, so
+ground about to be revealed brightened and then sank before the reveal
+ran; the hold was only a dim, and 18% of freshly-painted terrain is a
+pale wash rather than fog, so never-seen ground takes the block after
+all (at that dim — the block was wrong at full strength, not wrong in
+principle); `.probe-ripple` was never a ring at all, since a
+box-shadow spread on a 0×0 element fills rather than outlines, and the
+"ripple" was a hard seat-coloured square; and the hold was filed per
+seat while the observer's tiles are painted from the union, so a
+rival's band was free to enclose ground that was still black. All four
+are presentation. `docs/OUTSTANDING_ISSUES.md` #60 item 6.
+
+**Also in v1.53: the observer's board stopped reporting remembered
+ground as live (§3.11).** Presentation only. OBS dimmed on "has any
+seat ever seen this", which is the one test in the app that asks about
+sight without also asking about staleness, so ground nobody could
+currently see painted identically to ground under a live probe — and
+on a mature board twice as much of the lit map is memory as is sight.
+The hover readout had the same bug by a different route and said
+**LIVE on every square of the board**. Both now read one three-state
+answer: live, echo, never seen. `docs/OUTSTANDING_ISSUES.md` #61.
+
+**Also in v1.53: a SNAP fired on Snowflake is recorded (§4.9.7).** The
+only item here that is not presentation. `SOC_REPLAY_FRAME` never got
+a column for SNAP's FX payload when the weapon shipped in v1.36, so on
+the backend the league runs on the engine wrote `snap` / `snap_clouds`
+and the store dropped both without error. Every other surface agreed
+the strike had happened — the tag, the caption, the log, the
+scoreboard — and the replay showed nothing, because the animation is
+gated on the payload. The file store keeps frames verbatim, so it
+worked in every local test and failed only in competition. Columns
+added (schema **and** the ALTER block, since a store that names a
+column breaks every write on a deploy that lacks it); the two
+archived strikes are reconstructed client-side from the target that
+survived in the caption, minus the kill marks, which are gone. No
+rule, constant or engine behaviour changed — this is the record of
+play catching up with it. `docs/OUTSTANDING_ISSUES.md` #62, and
+`tests/test_replay_frame_columns.py` now fails the next weapon that
+forgets.
+
+### v1.52 — 2026-09-22
+
+**The results card now reports every weapon a season fired (§4.9,
+§4.10).** No rule changed. Across the 44 finished seasons on disk, 50
+weapons were fired and the card could print 21 of them — **SNAP had no
+row at all**, despite the engine having counted it since v1.38.
+
+Weapon counts now come from `weapons_used`, the ledger the engine bumps
+on each successful fire, instead of a tally rebuilt afterwards from
+replay frame tags. Three things a player can now read that were
+previously missing or wrong:
+
+- **Every kill has the weapon that made it beside it.** 16 seats used to
+  show one that did not — 8 because the fire was unprintable, 8 because
+  they predate v1.50's EMP/SNAP attribution fix and carry the old
+  miscount in their saved state. The latter is reconciled when the card
+  is drawn, in the unambiguous case only: a seat credited an EMP kill
+  that never fired an EMP is shown the SNAP kill it was.
+- **Ordnance is reported fired *against* bought**, flagging anything
+  unfired. Counting only fires made a rack bought and never used
+  identical to one never bought, and 62 of 88 seats ended a season
+  holding something.
+- **Losses are on the card.** `harvesters lost`, `harvesters smothered
+  by EMP`, `harvesters damaged` and `probes lost` were already computed
+  and then discarded, so the card was attacker-side only.
+
+See `docs/OUTSTANDING_ISSUES.md` #58 for the audit and the root cause.
+
+### v1.51 — 2026-09-22
+
+**The station score now subtracts GREEN on the night it is charged
+(§4.7).** No rule changed here — the engine has always charged
+`GREEN_ENDGAME_PENALTY` per parcel at the orbit that disposes it, and
+an audit of all 88 seats in the 44 finished seasons on disk found it
+correct on every one. What changed is that the platform now *says* so.
+
+The station readout summed each night's shipped RED and nothing else,
+so it ran high by the season's whole green charge and only reconciled
+at the closing settlement — which is why the discount appeared to wait
+for the final night. **75 of the 88 seats displayed a score that was
+too high**, by up to 1000. One seat finished on −94 while its station
+read 206 all season, and because the HUD scoreboard was already
+correct, the two disagreed on screen.
+
+Two things follow for anyone reading a score:
+
+- A `-100` per parcel now appears under the seat at the launch that
+  charged it, in the same form the season-closing fold already used.
+- The DUSK `+X` badge still means the RED coming in. Green is billed
+  on its own line rather than netted into it, so a night that ships 400
+  and dumps four green reads `+400` and `-400 green`, not `+0`.
+
+See `docs/OUTSTANDING_ISSUES.md` #57 for the audit and the root cause.
+
+### v1.50 — 2026-09-17
+
+**A SNAP's probe kills are no longer reported as EMP kills (§4.10).**
+
+The SNAP reuses the EMP's blast-sweep internally, and that sweep
+credited every probe it destroyed to `emp_probes` regardless of which
+weapon fired. The kills were real and the victims were right; only the
+row was wrong. Two consequences, both found in a live league:
+
+- **A seat that had never bought an EMP could finish a season credited
+  with probes "EMP'd".** Both finalists of the first knockout league
+  showed exactly that — three each, matching their snap firings one for
+  one, against zero EMPs purchased. Anyone reading the scoreboard to
+  work out what an agent does would have concluded it fired a weapon it
+  had never owned.
+- **The SNAP was the one weapon the kill-feed could not name**, which
+  is unfortunate given it is the cheapest rung and the one most forks
+  fire first.
+
+Destroyed beacons now go to **`snap_probes`**, kept apart from
+`emp_probes` for precisely the reason `snap_harvesters` is kept apart
+from `harv_damaged` (v1.36): a shot asset must never read as another
+weapon's casualty. The EMP's own two callers — the launch blast and the
+per-hour cloud tick — are unchanged, so nothing about EMP accounting
+moves.
+
+Also in this release, and from the same root: the endgame kill-feed in
+the web UI never listed `snap_harvesters` at all, so a crippled
+harvester was invisible there even though the engine had recorded it
+correctly since v1.36. Both SNAP rows are now shown.
+
+**Not a scoring change.** No mechanic, cost, radius or outcome moves —
+a SNAP does exactly what §4.10 already said. This is a reporting fix,
+and historical sessions keep whatever their frames recorded.
 
 ### v1.49 — 2026-09-14
 

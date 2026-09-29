@@ -24,6 +24,18 @@ The ruling, and what these tests pin:
   yet, they produce the identical effect, and so one is simply wasted.
   That symmetry is intended: it is what stops mutual chaff being cheaper
   than solo chaff.
+
+**SNAP is the one exception, and only on the flare's own hour (v1.57,
+CHG-1a, §4.9.4).** A round outruns a flare going up, so a same-hour
+flare does not stop it and it spends its charge; a window already
+standing does stop it, and then the charge is kept like any other
+jammed launch. Worth knowing why that arrived late: chaff-beats-SNAP
+was asserted in §4.9.4 and pinned by **nothing** — SNAP shipped in
+v1.36 and never got a line in this file — so the rule could have
+flipped either way and no test would have noticed. Both halves are
+pinned below now, along with the salvo staying stopped, because the
+edit worth catching is a later one widening "the fast weapon" into
+"weapons".
 """
 
 from __future__ import annotations
@@ -35,17 +47,23 @@ from sea_of_colours.game.weapons import CHAFF_DURATION_HOURS
 
 CHAFF = {"a": "chaff_flare"}
 EMP = {"a": "emp_launch", "at": [15, 10]}
+# An empty cell on purpose. These tests are about the hour clock, so a
+# SNAP that hits nothing is the cleanest probe of whether it flew.
+SNAP = {"a": "snap_launch", "at": [15, 10]}
 WAIT = {"a": "wait"}
 
 
 def _duel(*, p1_chaff: int = 0, p2_chaff: int = 0,
-          p1_emp: int = 0, p2_emp: int = 0) -> GameSession:
+          p1_emp: int = 0, p2_emp: int = 0,
+          p1_snap: int = 0, p2_snap: int = 0) -> GameSession:
     sess = GameSession.new(20, 14, seed=31)
     sess.phase = Phase.PLANNING
     sess.weapon_stock["p1"]["chaff"] = p1_chaff
     sess.weapon_stock["p2"]["chaff"] = p2_chaff
     sess.weapon_stock["p1"]["emp"] = p1_emp
     sess.weapon_stock["p2"]["emp"] = p2_emp
+    sess.weapon_stock["p1"]["snap"] = p1_snap
+    sess.weapon_stock["p2"]["snap"] = p2_snap
     # Far apart: this suite is about the hour clock, not collisions.
     sess.entities["harvester_p1"].x = 5
     sess.entities["harvester_p1"].y = 5
@@ -149,6 +167,66 @@ def test_two_flares_on_the_same_hour_both_fly():
     assert len(_tagged(frames, "chaff_flare", hour=1)) == 2, "both must fire"
     assert sess.weapon_stock["p1"]["chaff"] == 0
     assert sess.weapon_stock["p2"]["chaff"] == 0, "both paid; one bought nothing"
+
+
+# ── SNAP is the exception, and only on the flare's own hour (v1.57) ──
+#
+# CHG-1a. The round is faster than the flare going up, so being flared
+# AT does not stop it; a window already standing does, because by then
+# there is nothing left to outrun. Everything below exists because the
+# old rule — chaff beats SNAP outright — was stated in §4.9.4 and pinned
+# by nothing at all, so it could have flipped either way unnoticed.
+
+def test_an_unopposed_snap_still_launches():
+    """Guard, the same one the salvo gets above."""
+    sess = _duel(p1_snap=1)
+    frames = _resolve(sess, [SNAP, WAIT], [WAIT, WAIT])
+    assert _tagged(frames, "snap_launch", hour=1), "an unjammed round must fly"
+    assert sess.weapon_stock["p1"]["snap"] == 0, "and must cost its charge"
+
+
+def test_a_snap_outruns_a_flare_fired_on_its_own_hour():
+    """The rule change. Compare `test_a_flare_cancels_a_same_hour_salvo`:
+    identical setup, opposite outcome, and that asymmetry IS the weapon."""
+    sess = _duel(p1_chaff=1, p2_snap=1)
+    frames = _resolve(sess, [CHAFF, WAIT, WAIT], [SNAP, WAIT, WAIT])
+
+    assert _tagged(frames, "chaff_flare", hour=1), "the flare still fires"
+    assert _tagged(frames, "snap_launch", hour=1), (
+        "a SNAP outruns a flare going up on the same hour and must fly"
+    )
+
+
+def test_a_snap_that_outran_the_flare_spends_its_round():
+    """It fired, so it costs. The refund only ever existed because a
+    jammed house never fired."""
+    sess = _duel(p1_chaff=1, p2_snap=1)
+    _resolve(sess, [CHAFF, WAIT, WAIT], [SNAP, WAIT, WAIT])
+    assert sess.weapon_stock["p2"]["snap"] == 0
+
+
+def test_a_snap_inside_an_existing_window_does_not_fly():
+    """The other half, and the half that keeps chaff worth buying: once
+    the window is up the round is cancelled like anything else."""
+    sess = _duel(p1_chaff=1, p2_snap=1)
+    frames = _resolve(sess, [CHAFF, WAIT, WAIT], [WAIT, SNAP, WAIT])
+
+    assert not _tagged(frames, "snap_launch"), "hour 2 is inside the window"
+    assert _tagged(frames, "chaffed", hour=2), "and it is cancelled as chaffed"
+    assert sess.weapon_stock["p2"]["snap"] == 1, (
+        "a round that never flew must stay in stock"
+    )
+
+
+def test_the_salvo_is_still_stopped_on_the_flares_own_hour():
+    """The exception is SNAP's alone. Pinned here rather than left to the
+    EMP tests above, because the failure worth catching is a future edit
+    widening 'fast weapon' to mean 'any weapon'."""
+    sess = _duel(p1_chaff=1, p2_emp=1, p2_snap=1)
+    frames = _resolve(sess, [CHAFF, WAIT, WAIT], [EMP, WAIT, WAIT])
+
+    assert not _tagged(frames, "emp_launch"), "the salvo is not fast"
+    assert sess.weapon_stock["p2"]["emp"] == 1
 
 
 def test_two_flares_on_the_same_hour_do_not_extend_the_window():

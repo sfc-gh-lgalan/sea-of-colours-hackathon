@@ -1038,9 +1038,14 @@ class NightSimulator:
         #     the same hour it flies. Every other effect in the engine is
         #     judged against the snapshot and therefore cannot do that.
         #
-        #     Below chaff, though. A flare still cancels it like any other
-        #     launch — being first on a square is not being first in the
-        #     hour.
+        #     It outruns a flare fired on this same hour (v1.57, CHG-1a)
+        #     — hence ``already_jammed`` here and not ``jammed_now``,
+        #     which is the entire rule change. A round is faster than a
+        #     flare going up, so being flared AT does not stop it; being
+        #     flared EARLIER does, because by then the jam is standing
+        #     and there is nothing left to outrun. That is the same
+        #     distinction stage 2a already draws for the flares
+        #     themselves, and it reuses the same variable.
         self._snap_preempt_phase(
             sess,
             queue_for,
@@ -1050,7 +1055,7 @@ class NightSimulator:
             hour=hour,
             seat_list=seat_list,
             preempted=preempted,
-            jammed_now=jammed_now,
+            already_jammed=already_jammed,
         )
 
         # 2c. The hour-start LIVE snapshot for live-only drops (v1.28).
@@ -1165,7 +1170,7 @@ class NightSimulator:
         hour: int,
         seat_list: Tuple[str, ...],
         preempted: set[str],
-        jammed_now: bool,
+        already_jammed: bool,
     ) -> None:
         """Fire this hour's SNAPs, before anybody's vision is recorded.
 
@@ -1178,10 +1183,20 @@ class NightSimulator:
         Returns nothing. The damage it does lands on the session (probes
         destroyed, harvesters damaged, ``snap_clouds`` extended) and the
         hot cells it stamps are read by ``_apply_one`` later in the hour.
+
+        **A flare fired on this hour does not stop it (v1.57, §4.9.4).**
+        SNAP is the fast weapon and it outruns a flare going up; what it
+        cannot outrun is a window already standing, so the gate is
+        ``already_jammed`` rather than ``jammed_now``. Pricing falls out
+        of that and needed no code of its own: a round that fires spends
+        itself here, and one that does not never reaches
+        ``apply_snap_launch`` — it drops through to the main dispatch,
+        is tagged ``chaffed`` like any other jammed action, and keeps
+        its charge.
         """
         from sea_of_colours.game.session import cast_player
 
-        for p in (() if jammed_now else seat_list):
+        for p in (() if already_jammed else seat_list):
             if applied[p] >= MAX_MOVES or p in preempted:
                 continue
             move, idx = _next_actionable(queue_for[p], pointers[p])

@@ -67,26 +67,51 @@ fork in the room.
 
 ## CHG — rule and mechanic changes
 
-### CHG-1 · SNAP becomes a free slot, and outranks chaff — `open`
+### CHG-1 · SNAP becomes a free slot, and outranks chaff — `1a shipped v1.57, 1b open`
 
 Two separable halves. **Do them in this order**, because the first is
 small and self-contained and the second is engine surgery.
 
-#### CHG-1a · Chaff no longer cancels a SNAP — small
+#### CHG-1a · Chaff no longer cancels a SNAP — `shipped v1.57`
 
-SNAP is faster than a flare, so it should get through. The action it is
-*paired* with still gets cancelled, unless that is a second SNAP.
+A round outruns a flare **going up**; it does not outrun a window
+already **standing**. So a SNAP declared for the hour a flare is fired
+lands and spends its charge, and one declared for the carry-over hours
+is cancelled as `chaffed` with the charge intact, like any other jammed
+launch. Chaff still answers a SNAP — it has to be up first, which makes
+it a read rather than a reaction.
 
-Today the opposite is true, deliberately and in both places:
+**The fix was one word**, and that is worth recording. The engine
+already drew exactly this distinction for the flares themselves:
+`already_jammed` is a standing window, `jammed_now` is that *or* a
+flare fired on this hour. The SNAP stage was gated on the second and
+now gates on the first. Pricing needed no code at all — a round that
+fires spends itself, and one that does not never reaches
+`apply_snap_launch`, so it drops to the main dispatch and keeps its
+charge by the existing path.
 
-- `simulator.py` skips the SNAP pre-empt entirely when `jammed_now`.
-- RULEBOOK §4.9.4 states chaff outranks SNAP the same way it outranks
-  the EMP.
+**Nothing pinned the old rule.** `tests/test_chaff_precedence.py` had
+no SNAP case of any kind — SNAP shipped in v1.36 and never got a line
+there — so the behaviour asserted in §4.9.4 could have flipped either
+way unnoticed. Verified by reverting the engine and watching the new
+tests fail, which is the only thing that distinguishes a regression
+test from a comment.
 
-Contained: pre-empt ordering in `simulator.py`, the prose in §4.9.4 and
-§4.9.5, and a regression test pinning "flare up, SNAP still lands".
+**Two stale documents found on the way, both fixed:** §4.9.3's
+`emp_first` ordering list — the canonical one, cited by that tag in
+code comments — was missing **two stages**, SNAP pre-emption and the
+hour-start vision snapshot, because v1.36 wrote them into §4.9.4 as an
+"amended" copy instead. And §4.9.5's "chaff cancels launches too"
+bullet enumerated only `chaff_flare` and `emp_launch`; it was written
+in v1.14, two versions before SNAP existed, which is most likely how
+SNAP came to be jammed in the first place — inheritance, not a ruling.
 
-*(Note for whoever writes this: SNAP is **§4.9.4**. §4.10 is Blue-sign.)*
+Fanned out to: `simulator.py`, RULEBOOK §4.9.3/§4.9.4/§4.9.5 plus the
+changelog, `tests/test_chaff_precedence.py`, V12's `prompt.py` weapon
+briefing (both the SNAP and CHAFF blocks), `guide/weapons.html` and
+`manual/index.html`.
+
+*(Note for whoever writes 1b: SNAP is **§4.9.4**. §4.10 is Blue-sign.)*
 
 #### CHG-1b · A SNAP hour can also carry a normal action — large
 
@@ -434,6 +459,29 @@ to here.
 - **BUG-5** · `orchestrator_2/evals/cli.py` refuses the `cortex` runtime
   unless `SOC_BACKEND=snowflake`, while the matchup scripts run on
   `memory`. A footgun rather than a crash.
+- **BUG-14** · **"CHAFF is the sole mechanic that cancels an H1
+  landing" is false, and a play is keyed on it.** Found alongside
+  CHG-1a and deliberately kept out of that diff; it is wrong today and
+  was wrong before the rules change.
+  `tabula_v12/doctrine.py:392` tells every agent that chaff alone can
+  cancel an H1 landing and leave the pure on the board, then offers
+  CHAFF_INSURANCE — the second wave at the same cell — "KEYED ON CHAFF
+  ALONE", in those words. But §4.9.4 says a harvester landing on a
+  SNAP-hot cell "never touches down: the drop is refused, the hull is
+  damaged in orbit", and "a well-timed SNAP leaves the ore in the
+  ground". That is the same two properties. §3.6 is arguably a third
+  route, since a drop onto an occupied cell is refused too, and
+  §4.9.4 cites it as the shape SNAP copied.
+  So a rival who SNAPs your target at H1 beats the grab and V12 sends
+  no insurance. The text most likely just predates the weapon — SNAP
+  shipped in v1.36 — and **every fork in the tree copied it**, which
+  is the argument for fixing it centrally rather than per fork.
+  `manual/index.html` carries the same error in its own words: chaff
+  can "deny an H1 drop" among "two things chaff can do that nothing
+  else can".
+  Not yet verified in code — the claim above is read off the RULEBOOK,
+  and the honest first step is to play a SNAP-refused H1 landing and
+  check the pure survives.
 - **BUG-12** · ✅ **shipped v1.51.** The station score never subtracted
   GREEN, all season — a wrong number, not just the missing `-100` line.
   One function (`_osGetCumulativeScore` in `app.js`) summed shipped RED
