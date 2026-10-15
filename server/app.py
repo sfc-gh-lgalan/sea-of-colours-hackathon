@@ -495,6 +495,55 @@ if _BATTLES_DIR.is_dir():
     )
 
 
+# ── the league (v1.50) ─────────────────────────────────────────────
+#
+# Same source-plus-data split as the battle room above, and for the
+# same reason: the page is checked-in source under ``league/`` while
+# everything it draws is generated output under ``reports/league/``.
+# Serving the page from its source means a CSS fix lands on a
+# hard-refresh, and — more importantly — the route exists before any
+# match has been played, so "why is /league/ a 404" is never a
+# question anyone has to ask.
+_LEAGUE_HTML = _REPO_ROOT / "league" / "index.html"
+_LEAGUE_DATA = _REPO_ROOT / "reports" / "league"
+
+
+@app.get("/league/", include_in_schema=False)
+@app.get("/league", include_in_schema=False)
+def league_page() -> Response:
+    if not _LEAGUE_HTML.is_file():
+        raise HTTPException(status_code=404, detail="the league page is missing")
+    return Response(
+        content=_LEAGUE_HTML.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers=_NO_CACHE_HEADERS,
+    )
+
+
+# The frozen announcement travels beside the live page. It is a
+# separate file on purpose (it has to open off disk, out of a Slack
+# message, with no server at all) but mounting it too means the one
+# URL people are given works for both.
+@app.get("/league/announce.html", include_in_schema=False)
+def league_announcement() -> Response:
+    path = _REPO_ROOT / "league" / "announce.html"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no announcement built")
+    return Response(
+        content=path.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers=_NO_CACHE_HEADERS,
+    )
+
+
+if _LEAGUE_DATA.is_dir():
+    app.mount(
+        "/league",
+        _NoCacheStatic(directory=_LEAGUE_DATA, html=True),
+        name="league",
+    )
+
+
 # ── the turn lab ────────────────────────────────────────────────────
 #
 # A side experiment that clones frozen turns and lets agents play the

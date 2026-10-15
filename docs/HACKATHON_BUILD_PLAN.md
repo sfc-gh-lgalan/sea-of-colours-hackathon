@@ -99,7 +99,7 @@ weapons decision for the attendee to make.
 | 5 | Finish/polish the interactive manual (`manual/`) | pending |
 | 6 | Hackathon Guide (onboarding, sibling to `manual/`) | 🟡 first cut landed (2026-08-25) — `guide/index.html`; revisit after Phases 3/4 change the install story and the orbit |
 | 7 | In-game read-only agent advisor — invoke V12/RED_HARVEST mid-turn from the UI: reasoning card (readable + txt dump), magenta board overlay, adopt-into-your-policy | 🟢 substantially done (2026-08-26, **v1.19**) — **ASK V12**: `GET/POST /api/game/{id}/advisor` drives the harness with `submit=False` (its existing read-only path, so no memory is written and the game is untouched); night/planning turns only, gated on a Snowflake-backed game plus Cortex credentials; timer, cancel, and force-cancel on submit; plan/thinking tabs; a numbered violet board overlay on hover; adopt-into-your-policy. `tests/test_advisor_endpoint.py`. **Remaining:** RED_HARVEST can't be asked (V12 only), and there's no txt dump of the reasoning |
-| 7.5 | **The agent iteration loop** — make the turn-replay suite something an attendee can actually use to improve a fork. Designed in `docs/AGENT_LOOP_PLAN.md` | pending |
+| 7.5 | **The agent iteration loop** — make the turn-replay suite something an attendee can actually use to improve a fork. Designed in `docs/AGENT_LOOP_PLAN.md` | ✅ done — shipped as the turn lab (`turnlab/`, v1.42), `scripts/soc.py`, `soc season` (v1.40) and the league (`soc cup`, v1.50). Row was stale; corrected 2026-09-19 |
 | 8 | Drift-testing alarms + PR-based submission workflow doc; "add weapons to V12" as the flagship worked example | pending |
 
 Sequencing: 1→1.5→2→3 is the critical path. 1.5 must land **before** 2:

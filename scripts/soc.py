@@ -1345,6 +1345,20 @@ def cmd_league(args) -> int:
     return 0
 
 
+# ── the cup: 1v1, best of three ─────────────────────────────────────
+#
+# Deliberately not folded into `league` above. That command ranks agents
+# by how they handle constructed boards, which is a coaching signal and
+# a perfectly good one — but it never puts two entrants in the same
+# game, so it cannot answer "who won". This does, and the two are
+# reported differently enough that merging them would make both vaguer.
+
+
+def _cup_roster(args):
+    from sea_of_colours.league import roster as roster_mod
+    return roster_mod.load(args.roster) if args.roster else roster_mod.load()
+
+
 def cmd_prune(args) -> int:
     """Delete old sessions, loudly, and only when asked twice.
 
@@ -1463,6 +1477,216 @@ def cmd_prune(args) -> int:
     for c, err in failures[:10]:
         print(f"  {c.session_id[:8]} {c.season_name[:28]:<28} {err}")
     return 1 if failures else 0
+
+
+def cmd_cup_roster(args) -> int:
+    """Draft the field from an inventory, splitting on the cutoff."""
+    from sea_of_colours.league import roster as roster_mod
+
+    src = Path(args.inventory).expanduser()
+    if not src.is_file():
+        _die(f"no inventory at {src}",
+             fix="run `python scripts/league_inventory.py` first")
+    rows = json.loads(src.read_text()).get("agents") or []
+    field = roster_mod.seed_from(rows, cutoff=args.cutoff, note=args.note)
+
+    out = Path(args.roster) if args.roster else roster_mod.ROSTER_PATH
+    if out.is_file() and not args.force:
+        _die(f"{out} already exists",
+             fix="edit it by hand, or pass --force to redraft from scratch")
+    field.save(out)
+
+    print(f"\n  {len(field.entrants)} entrant(s), cutoff {args.cutoff}\n")
+    for e in field.entrants:
+        who = ", ".join(e.participants) or "— nobody named —"
+        print(f"    {e.label:<46} {e.first_commit[:16]}  {who[:46]}")
+    print(f"\n  {len(field.bench)} benched")
+    for b in field.bench:
+        print(f"    {b.label:<46} {b.reason}")
+    print(f"\n  wrote {out}")
+    print("  EDIT IT — the cutoff is a first draft, you are the authority.\n")
+    return 0
+
+
+def cmd_cup_plan(args) -> int:
+    """Show the next round without playing it."""
+    from sea_of_colours.league import fixtures, runner
+
+    field = _cup_roster(args)
+    matches, stage = runner.plan(field.labels)
+    played = runner.read_all()
+
+    n = len(field.labels)
+    size = fixtures.bracket_size(n)
+    play_ins = len(fixtures.play_in_matches(field.labels))
+    total = size - 1 + play_ins
+
+    # Seasons at worst: every match its full length, and the final is
+    # longer than the rest.
+    worst = sum(fixtures.best_of("final") if i == 0 else fixtures.BEST_OF
+                for i in range(total))
+    longer = {s: b for s, b in fixtures.BEST_OF_BY_STAGE.items()}
+    print(f"\n  {n} entrants · best of {fixtures.BEST_OF} · knockout"
+          + (" · " + ", ".join(f"{fixtures.STAGE_LABEL.get(s, s)} is best of {b}"
+                               for s, b in longer.items()) if longer else ""))
+    print(f"  bracket of {size}"
+          + (f" after {play_ins} play-in(s)" if play_ins else "")
+          + f" — {total} matches, up to {worst} seasons")
+    print(f"  {len(played)} match(es) already on disk\n")
+
+    king = fixtures.champion(field.labels, played)
+    if king:
+        print(f"  CHAMPION: {king} — `soc cup site` to publish it\n")
+        return 0
+    if not matches:
+        print(f"  {stage}: nothing to hand out. Either matches are "
+              f"recorded but unfinished, or a tie was a genuine draw "
+              f"and needs a decision.\n")
+        return 0
+
+    label = fixtures.STAGE_LABEL.get(stage, stage)
+    print(f"  NEXT: {label} — {len(matches)} match(es), "
+          f"best of {fixtures.best_of(stage)}, "
+          f"up to {len(matches) * fixtures.best_of(stage)} seasons\n")
+    seeds = {a: i + 1 for i, a in enumerate(field.labels)}
+    for m in matches:
+        print(f"    [{seeds.get(m.a, '?'):>2}] {m.a}"
+              f"  v  [{seeds.get(m.b, '?'):>2}] {m.b}")
+        for n in range(1, fixtures.best_of(m.stage) + 1):
+            g = m.game(n)
+            print(f"        g{n}  p1={g.p1:<34} p2={g.p2:<34} seed={g.seed}")
+    print()
+    return 0
+
+
+def cmd_cup_run(args) -> int:
+    """Play the next round."""
+    from sea_of_colours.league import roster as roster_mod, runner
+
+    field = _cup_roster(args)
+    problems = roster_mod.check(field)
+    if problems:
+        for p in problems:
+            print(f"  ! {p}", file=sys.stderr)
+        if not args.force:
+            _die("the roster will not run",
+                 fix="fix the above, or pass --force to play anyway")
+
+    # --wide resumes a match season by season, so it wants a partially
+    # played one offered back rather than filtered out as "played".
+    matches, stage = runner.plan(field.labels, include_partial=args.wide)
+    if stage == "done":
+        print("\n  the league is finished\n")
+        return 0
+    if not matches:
+        print(f"\n  {stage}: nothing to play\n")
+        return 0
+
+    # A one-match round — the final, or a single match being resumed —
+    # leaves the whole machine idle behind one season at a time, because
+    # a job is normally a match. Spreading the match's *certain* seasons
+    # across workers fixes that without letting the pool decide when the
+    # match stops: only the seasons that cannot be made irrelevant go
+    # out together. See fixtures.unconditional_games.
+    if args.wide and len(matches) == 1:
+        from sea_of_colours.league import fixtures
+        m = matches[0]
+        wide = fixtures.unconditional_games(m.stage)
+        bo = fixtures.best_of(m.stage)
+        print(f"\n  {stage}: {m.a}  v  {m.b}")
+        print(f"  best of {bo}, first to {fixtures.wins_needed(m.stage)}")
+        print(f"  first {wide} season(s) together on "
+              f"{min(args.jobs, wide)} worker(s), then one at a time")
+        if args.days:
+            print(f"  {args.days}-day seasons (short — a test, not a league)")
+        print()
+
+        def note(g) -> None:
+            if g.error or g.aborted:
+                print(f"    g{g.n}  FAILED — {g.error or g.aborted}")
+                return
+            won = g.winner or "draw"
+            flag = (f"  ! {g.fallback_turns} fallback turn(s)"
+                    if g.fallback_turns else "")
+            print(f"    g{g.n}  {won:<46} {g.seconds:>6.0f}s{flag}")
+
+        res = runner.play_match_wide(
+            m, days=args.days, jobs=args.jobs, backend=args.backend,
+            store_dir=args.store_dir, on_game=note,
+        )
+        print(f"\n  {res.scoreline}  {res.winner or 'draw'} "
+              f"({res.decided_by}, {len(res.games)} season(s))\n")
+        return 0 if res.complete else 1
+
+    print(f"\n  {stage}: {len(matches)} match(es) on {args.jobs} worker(s)")
+    if args.days:
+        print(f"  {args.days}-day seasons (short — a test, not a league)")
+    print()
+
+    done = 0
+
+    def tick(summary: dict) -> None:
+        nonlocal done
+        done += 1
+        head = f"  [{done}/{len(matches)}]"
+        if not summary.get("ok"):
+            print(f"{head}  {summary['id']}  FAILED — {summary.get('error')}")
+            return
+        won = summary.get("winner") or "draw"
+        flag = ("  ! %d fallback turn(s)" % summary["fallback_turns"]
+                if summary.get("fallback_turns") else "")
+        print(f"{head}  {summary['id']}  {summary['scoreline']}  "
+              f"{won} ({summary['decided_by']}, {summary['seconds']}s){flag}")
+
+    results = runner.run(
+        matches, jobs=args.jobs, days=args.days, backend=args.backend,
+        store_dir=args.store_dir, resume=not args.replay, on_done=tick,
+    )
+    broke = [r for r in results if not r.get("ok")]
+    print(f"\n  {len(results) - len(broke)} played, {len(broke)} failed\n")
+    return 1 if broke else 0
+
+
+def cmd_cup_site(args) -> int:
+    """Rebuild the website's data from whatever has been played."""
+    from sea_of_colours.league import site
+
+    data = site.build(backend=args.backend, store_dir=args.store_dir,
+                      with_stats=not args.no_stats)
+    path = site.write(data)
+    health = data["health"]
+
+    print(f"\n  {len(data['matches'])} match(es), {health['games']} season(s)")
+    if health["games_with_fallback"]:
+        print(f"  ! {health['games_with_fallback']} season(s) contain "
+              f"{health['fallback_turns']} fallback turn(s) — those were "
+              "played by the built-in heuristic, not the agent")
+    if health["errored"]:
+        print(f"  ! {health['errored']} season(s) errored or aborted")
+    if data.get("champion"):
+        print(f"  CHAMPION: {data['champion']}")
+    for row in data["progress"][:6]:
+        if not row["played"]:
+            continue
+        out = (f"out at {row['out_at']}" if row["out_at"]
+               else f"through, at {row['reached']}")
+        print(f"    [{row['seed']:>2}] {row['agent']:<44} "
+              f"{row['won']}W {row['lost']}L  {row['margin']:+d}  {out}")
+    print(f"\n  wrote {path}")
+
+    # The shareable page is regenerated in the same breath, because the
+    # two going out of step is the failure that matters: /league/ is
+    # read by whoever is watching, announce.html by everyone else, and
+    # a stale snapshot in Slack is worse than no snapshot.
+    if site.write_announce(data):
+        print(f"  wrote {site.ANNOUNCE_PATH} (shareable snapshot)")
+
+    # The full record, generated whole rather than patched in place —
+    # it is output, so there is nothing in it to preserve.
+    from sea_of_colours.league import review
+    print(f"  wrote {review.write(data)} (shareable full record)")
+    print("  open  http://127.0.0.1:8000/league/\n")
+    return 0
 
 
 # ── wiring ──────────────────────────────────────────────────────────
@@ -1677,6 +1901,57 @@ def build_parser() -> argparse.ArgumentParser:
                     help="ignore any server and go straight to disk")
     pr.add_argument("--yes", action="store_true", help="actually delete")
     pr.set_defaults(fn=cmd_prune)
+
+    cup = sub.add_parser(
+        "cup", help="1v1 best-of-three between the day's agents",
+    )
+    cupsub = cup.add_subparsers(dest="cupcmd")
+
+    def _shared(sp, *, store=True):
+        sp.add_argument("--roster", default=None,
+                        help="roster file (default reports/league/roster.json)")
+        if store:
+            sp.add_argument("--backend", default="file",
+                            choices=("file", "snowflake", "multi"),
+                            help="must persist, or replay links die")
+            sp.add_argument("--store-dir", default=None,
+                            help="file-backend directory (default ./seasons)")
+
+    cr = cupsub.add_parser("roster", help="draft the field from an inventory")
+    cr.add_argument("--inventory", default="~/Desktop/soc-agents/INVENTORY.json")
+    cr.add_argument("--cutoff", required=True,
+                    help="ISO timestamp; agents first committed after it "
+                         "are entrants (e.g. 2026-09-16T14:00:00+02:00)")
+    cr.add_argument("--note", default="")
+    cr.add_argument("--force", action="store_true",
+                    help="overwrite an existing roster")
+    _shared(cr, store=False)
+    cr.set_defaults(fn=cmd_cup_roster)
+
+    cp = cupsub.add_parser("plan", help="show the next round without playing")
+    _shared(cp, store=False)
+    cp.set_defaults(fn=cmd_cup_plan)
+
+    cx = cupsub.add_parser("run", help="play the next round")
+    cx.add_argument("--jobs", type=int, default=4,
+                    help="matches at once; 2x this many model seats at once")
+    cx.add_argument("--days", type=int, default=None,
+                    help="short seasons, for testing the plumbing")
+    cx.add_argument("--wide", action="store_true",
+                    help="for a one-match round (the final): run the "
+                         "seasons it is certain to play at once")
+    cx.add_argument("--replay", action="store_true",
+                    help="re-run matches already on disk")
+    cx.add_argument("--force", action="store_true",
+                    help="run despite roster problems")
+    _shared(cx)
+    cx.set_defaults(fn=cmd_cup_run)
+
+    cs = cupsub.add_parser("site", help="rebuild the /league/ page data")
+    cs.add_argument("--no-stats", action="store_true",
+                    help="skip the weapons/kills read (much faster)")
+    _shared(cs)
+    cs.set_defaults(fn=cmd_cup_site)
 
     return p
 

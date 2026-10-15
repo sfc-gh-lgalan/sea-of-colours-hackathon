@@ -1,0 +1,1064 @@
+<!doctype html>
+<!--
+  SEA OF COLOURS · KNOCKOUT LEAGUE — shareable announcement
+  ═════════════════════════════════════════════════════════════════════
+
+  A FROZEN page. Deliberately not the live site.
+
+  This file exists to be dropped into Slack and opened by somebody who
+  has never cloned the repo, so it is entirely self-contained: no
+  sibling CSS, no sibling JS, no fetch, nothing that reaches the
+  engine. Everything below is baked in at the moment it was written.
+
+  Its live twin is /league/, which draws the same competition from the
+  match files and links into real replays. That one needs a server.
+  This one needs a browser. Do not make this one clever — the moment
+  it depends on anything, it stops being shareable, which is the only
+  reason it exists.
+
+  Regenerated as a new snapshot when a round finishes. The SNAPSHOT
+  line under the title is what tells a reader how stale they are.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sea of Colours · Knockout League</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=VT323&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens from manual/manual.css, so this sits beside the guides
+     without a seam. Inlined rather than linked — see the note above. */
+  :root {
+    --bg: #0d0d12;
+    --raise: #131319;
+    --raise2: #16161d;
+    --fg: #f0f6fc;
+    --dim: #a8b1bd;
+    --frame: #4a4a5a;
+    --soft: #2a2a35;
+
+    --green: #4dca5e;
+    --red: #ff8585;
+    --blue: #7ab8ff;
+    --amber: #ffc857;
+
+    --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, Menlo,
+            ui-monospace, monospace;
+    --retro: 'VT323', 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0 0 90px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 26px; }
+  .dim { color: var(--dim); }
+  .green { color: var(--green); }
+  .amber { color: var(--amber); }
+  .blue  { color: var(--blue); }
+  .red   { color: var(--red); }
+  b, strong { font-weight: 500; }
+  code {
+    font-family: var(--mono);
+    background: var(--raise2);
+    border: 1px solid var(--soft);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-size: .92em;
+  }
+
+  /* ══ hero ═══════════════════════════════════════════════════════ */
+
+  .hero {
+    border-bottom: 1px solid var(--soft);
+    padding: 46px 0 34px;
+    background:
+      radial-gradient(900px 260px at 18% -40%, rgba(122,184,255,.13), transparent 70%),
+      radial-gradient(700px 240px at 82% -30%, rgba(255,133,133,.10), transparent 70%);
+  }
+  .kicker {
+    color: var(--dim);
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    font-size: 10px;
+  }
+  h1 {
+    font-family: var(--retro);
+    font-size: 66px;
+    line-height: .95;
+    margin: 16px 0 4px;
+    font-weight: 400;
+    letter-spacing: .01em;
+  }
+  h1 .sub { color: var(--amber); }
+  .snapshot {
+    margin-top: 14px;
+    display: inline-block;
+    border: 1px solid var(--soft);
+    background: var(--raise);
+    border-radius: 2px;
+    padding: 5px 11px;
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .lede { margin: 18px 0 0; max-width: 78ch; color: var(--dim); }
+  .lede b { color: var(--fg); }
+
+  /* ══ numbers ════════════════════════════════════════════════════ */
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+    gap: 1px;
+    background: var(--soft);
+    border: 1px solid var(--soft);
+    margin: 34px 0 6px;
+  }
+  .fig { background: var(--raise); padding: 15px 17px; }
+  .fig .n { font-family: var(--retro); font-size: 40px; line-height: .9; }
+  .fig .k {
+    color: var(--dim);
+    font-size: 9.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    margin-top: 7px;
+  }
+
+  h2 {
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .24em;
+    text-transform: uppercase;
+    color: var(--dim);
+    border-bottom: 1px solid var(--soft);
+    padding-bottom: 9px;
+    margin: 52px 0 22px;
+  }
+  h2 .count { color: var(--frame); margin-left: 8px; letter-spacing: .1em; }
+
+  /* ══ tabs ═══════════════════════════════════════════════════════ */
+
+  .tabs {
+    display: flex; gap: 0; margin: 40px 0 0;
+    border-bottom: 1px solid var(--soft); flex-wrap: wrap;
+  }
+  .tab {
+    appearance: none; background: none; cursor: pointer;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--frame); border: 1px solid transparent;
+    border-bottom: none; padding: 9px 16px; margin-bottom: -1px;
+    border-radius: 2px 2px 0 0;
+  }
+  .tab:hover { color: var(--dim); }
+  .tab.on {
+    color: var(--fg); background: var(--raise);
+    border-color: var(--soft); border-bottom: 1px solid var(--bg);
+  }
+  .panel { display: none; }
+  .panel.on { display: block; }
+  /* The first heading inside a panel sits right under the tab strip,
+     so it does not need the usual top margin. */
+  .panel > h2:first-child { margin-top: 30px; }
+
+  /* ══ the field ══════════════════════════════════════════════════ */
+
+  .field {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(392px, 1fr));
+    gap: 12px;
+  }
+  /* Deliberately the same card as a matchup row, so an agent looks
+     the same wherever you meet it on the page. */
+  .field .ag {
+    border: 1px solid var(--soft);
+    background: var(--raise);
+    border-radius: 3px;
+  }
+
+  /* ══ who plays who ══════════════════════════════════════════════ */
+
+  .who {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(392px, 1fr));
+    gap: 12px;
+  }
+  .match {
+    border: 1px solid var(--soft);
+    background: var(--raise);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .mkind {
+    background: var(--raise2);
+    border-bottom: 1px solid var(--soft);
+    padding: 6px 13px;
+    font-size: 9.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .mrow { padding: 11px 13px 12px; }
+  .mhead { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .mseed {
+    font-family: var(--retro);
+    font-size: 20px;
+    color: var(--frame);
+    line-height: 1;
+    min-width: 20px;
+  }
+  .mname {
+    font-size: 13px;
+    font-weight: 500;
+    word-break: break-word;
+    flex: 1;
+  }
+  .mteam {
+    font-size: 9.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--frame);
+    white-space: nowrap;
+  }
+  .mwho {
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1.5;
+    margin: 5px 0 0 29px;
+  }
+  .mmoves {
+    margin: 8px 0 0 29px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+  /* One chip per weapon move, coloured by the weapon it fires, so a
+     row's shape reads before any of its words do. */
+  .mmoves i, .lg i {
+    font-style: normal;
+    font-size: 9.5px;
+    letter-spacing: .09em;
+    border: 1px solid var(--frame);
+    border-radius: 2px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+  .w-snap  { border-color: var(--red)   !important; color: var(--red); }
+  .w-emp   { border-color: var(--blue)  !important; color: var(--blue); }
+  .w-chaff { border-color: var(--amber) !important; color: var(--amber); }
+  .w-buy   { border-color: var(--soft)  !important; color: var(--frame); }
+  .mnote {
+    font-style: normal;
+    font-size: 10.5px;
+    color: var(--frame);
+    flex-basis: 100%;
+  }
+  .mvs {
+    border-top: 1px solid var(--soft);
+    border-bottom: 1px solid var(--soft);
+    background: var(--raise2);
+    padding: 2px 13px;
+    font-size: 10px;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: var(--frame);
+  }
+  .mrow.tbd .mname { color: var(--frame); font-weight: 400; }
+  .lg { margin-left: 8px; display: inline-flex; gap: 5px; }
+
+  /* ══ bracket ════════════════════════════════════════════════════ */
+
+  .shape {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .rnd { display: flex; flex-direction: column; min-width: 172px; flex: 1; }
+  .rnd .rh {
+    color: var(--dim);
+    font-size: 9.5px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    padding: 0 0 12px 2px;
+    white-space: nowrap;
+  }
+  .rnd .rh i { color: var(--frame); font-style: normal; }
+  .cell { flex: 1; display: flex; align-items: center; padding-right: 18px; position: relative; }
+  /* One cell is one whole tie, so every cell needs a gap or sixteen
+     names run together as a single block. The wider gap on odd
+     children (children are the .rh header, then the cells) separates
+     the two ties that feed the same box in the next round. */
+  .rnd .cell { margin-bottom: 5px; }
+  .rnd .cell:nth-child(odd) { margin-bottom: 15px; }
+  .tie {
+    width: 100%;
+    border: 1px solid var(--soft);
+    background: var(--raise);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .tie .s {
+    padding: 4px 8px;
+    font-size: 10.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tie .s + .s { border-top: 1px solid var(--soft); }
+  .tie .s .n { color: var(--frame); display: inline-block; min-width: 17px; }
+  .tie .s.tbd { color: var(--frame); }
+  /* A played tie. The loser is dimmed rather than struck through or
+     reddened: sixteen agents go out of a sixteen-agent knockout, so
+     losing is the normal case and marking it as damage would paint
+     most of the board as failure. */
+  .tie .s.won { color: var(--green); }
+  .tie .s.lost { color: var(--dim); }
+  .tie .s .g {
+    float: right; color: var(--frame); padding-left: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tie .s.won .g { color: var(--green); }
+  .tie.done { border-color: var(--frame); }
+  .tie.live { border-left: 2px solid var(--amber); }
+
+  /* How far an agent got, in the field list. */
+  .fate {
+    font-size: 9px; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--frame); padding: 0 13px 7px;
+  }
+  .fate.in { color: var(--green); }
+  .fate.champ { color: var(--amber); }
+  .mkind .res { float: right; color: var(--fg); letter-spacing: .1em; }
+  .mkind .res b { color: var(--green); font-weight: 500; }
+  .cell::before {
+    content: "";
+    position: absolute;
+    right: 9px; top: 50%;
+    width: 9px;
+    border-top: 1px solid var(--soft);
+  }
+  .rnd.last .cell::before { display: none; }
+  .cup {
+    align-self: center;
+    border: 1px solid var(--amber);
+    background: rgba(255,200,87,.07);
+    color: var(--amber);
+    padding: 11px 17px;
+    border-radius: 2px;
+    white-space: nowrap;
+    font-family: var(--retro);
+    font-size: 21px;
+  }
+
+  /* ══ rules ══════════════════════════════════════════════════════ */
+
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 12px;
+  }
+  .rule {
+    border: 1px solid var(--soft);
+    border-left: 2px solid var(--blue);
+    background: var(--raise);
+    padding: 13px 16px;
+  }
+  .rule .t {
+    font-size: 9.5px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 7px;
+  }
+  .rule p { margin: 0; font-size: 12.5px; }
+
+  .foot {
+    margin-top: 54px;
+    padding-top: 20px;
+    border-top: 1px solid var(--soft);
+    color: var(--frame);
+    font-size: 11px;
+  }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 44px; }
+    .wrap { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="kicker">Snowflake &middot; Sea of Colours</div>
+    <h1>Knockout <span class="sub">League</span></h1>
+    <div class="snapshot">Snapshot &middot; Thu 17 Sep, 11:00 &middot; before round one</div>
+    <p class="lede">
+      Seventeen agents, built by <b>51 people</b> across two days, now
+      play each other for real. Single elimination: win and you go
+      through, lose and you are out. Every tie is <b>three full
+      seasons</b>, and the whole thing ends in one final.
+    </p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="figures">
+    <div class="fig"><div class="n">17</div><div class="k">agents</div></div>
+    <div class="fig"><div class="n">51</div><div class="k">people</div></div>
+    <div class="fig"><div class="n">29</div><div class="k">named weapon moves</div></div>
+    <div class="fig"><div class="n">16</div><div class="k">matches</div></div>
+    <div class="fig"><div class="n">48</div><div class="k">seasons, at most</div></div>
+    <div class="fig"><div class="n">1</div><div class="k">champion</div></div>
+  </div>
+
+  <!-- Three views of the same seventeen agents. Tabs rather than one
+       long scroll because the three answer different questions: how
+       do I get to the final, who do I play first, and who is in this
+       thing at all. Somebody sharing the page in Slack usually wants
+       exactly one of them. -->
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-panel="p-bracket" role="tab">The bracket</button>
+    <button class="tab" data-panel="p-round1" role="tab">Round one</button>
+    <button class="tab" data-panel="p-field" role="tab">The field &middot; 17</button>
+  </div>
+
+  <div class="panel on" id="p-bracket">
+    <h2>The road to the final</h2>
+    <div class="shape" id="shape"></div>
+  </div>
+
+  <div class="panel" id="p-round1">
+    <h2>Round one <span class="count">who plays who</span></h2>
+    <p class="dim" style="margin-top:-6px;max-width:82ch">
+      Seeded by submission time, earliest first, so the draw is
+      reproducible and nobody has to trust a shuffle. Under each agent
+      are <b>its own weapon moves</b>, read out of its source &mdash;
+      the names its team gave them.
+      <span class="lg"><i class="w-snap">SNAP</i><i class="w-emp">EMP</i><i class="w-chaff">CHAFF</i></span>
+    </p>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="panel" id="p-field">
+    <h2>The field <span class="count">17 agents &middot; 51 people</span></h2>
+    <p class="dim" style="margin-top:-6px;max-width:82ch">
+      Every entrant, in seed order, with everyone who built it and the
+      weapon moves it carries.
+      <span class="lg"><i class="w-snap">SNAP</i><i class="w-emp">EMP</i><i class="w-chaff">CHAFF</i></span>
+    </p>
+    <div class="field" id="field"></div>
+  </div>
+
+  <h2>How a tie is decided</h2>
+
+  <div class="rules">
+    <div class="rule">
+      <div class="t">Three seasons</div>
+      <p>
+        Every tie is up to three complete seasons &mdash; seven days
+        each, orbit and night, played out in full. Not one game.
+        <b>The final is seven.</b>
+      </p>
+    </div>
+    <div class="rule">
+      <div class="t">Sides swap</div>
+      <p>
+        Game one you start in seat p1, game two in p2. The starting
+        corners are not equal, so a tie played from one seat would
+        measure the map as much as the agent.
+      </p>
+    </div>
+    <div class="rule">
+      <div class="t">First to two</div>
+      <p>
+        Two season wins takes the tie. A 2&ndash;0 ends it after two
+        games &mdash; and because sides had already swapped, that
+        result is balanced, not a shortcut.
+        <b>Four takes the final.</b>
+      </p>
+    </div>
+    <div class="rule">
+      <div class="t">Then margin</div>
+      <p>
+        If the full distance leaves nobody on the winning number, the
+        tie goes to <b>aggregate points</b> across every season played.
+        An exact tie on that is a genuine draw, and very nearly
+        impossible.
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">
+    Weapon moves were read out of each agent's own source, not typed
+    from memory: the play it declares, the option that offers it and
+    the compiler that puts it on the wire all have to be there before
+    a name is listed. Five agents buy ordnance they have no move to
+    fire &mdash; which is the honest state of a hard problem on day
+    two, not a mark against them.
+    &nbsp;&middot;&nbsp; This page is a frozen snapshot for sharing;
+    the live bracket with replays and full statistics runs at
+    <code>/league/</code>.
+  </div>
+
+</div>
+
+<script>
+/* Baked-in data. This page has no live source by design — regenerate
+   the file to update it. Seeds are submission order, earliest first.
+
+   `moves` is read out of each agent's own source, not typed from
+   memory: the play names come from its WeaponPlay declarations (or
+   its weapon menu options, for the two teams that hand-rolled the
+   path instead of using the forge). An agent with no moves listed has
+   no weapon wired — it plays, it just cannot shoot. */
+/* ══ GENERATED — do not hand-edit ═══════════════════════════════════
+   Everything between the two sentinel lines is rewritten by
+   `soc cup site`, which reads the match files and bakes the state of
+   the competition into this file.
+
+   Baked rather than fetched, for the reason in the header: this page
+   has to survive being dropped into Slack and opened by somebody with
+   no server and no clone. A fetch would make it a broken page instead
+   of a stale one.
+
+   An empty `rounds` is a valid state, and the original one — with no
+   results the bracket draws the *draw*, which is exactly what an
+   announcement should say before anything has been played. So this
+   file is useful before the first match and after the last without
+   two code paths pretending to be one. */
+// <<<SOC_RESULTS
+const RESULTS =
+{
+  "snapshot": "Thu 17 Sep, 16:35 &middot; final result",
+  "played": 16,
+  "total": 16,
+  "champion": "cadogan_sinopec_finally_came_up_with_agent_name",
+  "rounds": [
+    {
+      "h": "Play-in",
+      "i": "1 match",
+      "ties": [
+        {
+          "a": "flybrain_jukebox",
+          "b": "sforza_reformed_the_killer",
+          "seed_a": 16,
+          "seed_b": 17,
+          "score": "2-1",
+          "winner": "flybrain_jukebox",
+          "games": 3
+        }
+      ]
+    },
+    {
+      "h": "Round of 16",
+      "i": "8",
+      "ties": [
+        {
+          "a": "darkmatter_bamf",
+          "b": "flybrain_jukebox",
+          "seed_a": 1,
+          "seed_b": 16,
+          "score": "0-2",
+          "winner": "flybrain_jukebox",
+          "games": 2
+        },
+        {
+          "a": "redwatch_reaper",
+          "b": "emea_techup_afarrand",
+          "seed_a": 8,
+          "seed_b": 9,
+          "score": "0-2",
+          "winner": "emea_techup_afarrand",
+          "games": 2
+        },
+        {
+          "a": "cthvse_striker",
+          "b": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "seed_a": 4,
+          "seed_b": 13,
+          "score": "1-2",
+          "winner": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "games": 3
+        },
+        {
+          "a": "glaxo_v1",
+          "b": "iakabi_reaper",
+          "seed_a": 5,
+          "seed_b": 12,
+          "score": "0-2",
+          "winner": "iakabi_reaper",
+          "games": 2
+        },
+        {
+          "a": "tata_tracker",
+          "b": "bourbon_sentinel",
+          "seed_a": 2,
+          "seed_b": 15,
+          "score": "2-0",
+          "winner": "tata_tracker",
+          "games": 2
+        },
+        {
+          "a": "kruppvalois_agent",
+          "b": "bourboun_analytics_soc_god_player",
+          "seed_a": 7,
+          "seed_b": 10,
+          "score": "2-1",
+          "winner": "kruppvalois_agent",
+          "games": 3
+        },
+        {
+          "a": "yayfeng_main",
+          "b": "neo_orsini_pbeyer",
+          "seed_a": 3,
+          "seed_b": 14,
+          "score": "2-0",
+          "winner": "yayfeng_main",
+          "games": 2
+        },
+        {
+          "a": "tblasi_warden",
+          "b": "glaxosmithkline_reaper",
+          "seed_a": 6,
+          "seed_b": 11,
+          "score": "1-2",
+          "winner": "glaxosmithkline_reaper",
+          "games": 3
+        }
+      ]
+    },
+    {
+      "h": "Quarter-final",
+      "i": "4",
+      "ties": [
+        {
+          "a": "flybrain_jukebox",
+          "b": "emea_techup_afarrand",
+          "seed_a": 16,
+          "seed_b": 9,
+          "score": "2-0",
+          "winner": "flybrain_jukebox",
+          "games": 2
+        },
+        {
+          "a": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "b": "iakabi_reaper",
+          "seed_a": 13,
+          "seed_b": 12,
+          "score": "2-1",
+          "winner": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "games": 3
+        },
+        {
+          "a": "tata_tracker",
+          "b": "kruppvalois_agent",
+          "seed_a": 2,
+          "seed_b": 7,
+          "score": "1-2",
+          "winner": "kruppvalois_agent",
+          "games": 3
+        },
+        {
+          "a": "yayfeng_main",
+          "b": "glaxosmithkline_reaper",
+          "seed_a": 3,
+          "seed_b": 11,
+          "score": "2-0",
+          "winner": "yayfeng_main",
+          "games": 2
+        }
+      ]
+    },
+    {
+      "h": "Semi-final",
+      "i": "2",
+      "ties": [
+        {
+          "a": "flybrain_jukebox",
+          "b": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "seed_a": 16,
+          "seed_b": 13,
+          "score": "0-2",
+          "winner": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "games": 2
+        },
+        {
+          "a": "kruppvalois_agent",
+          "b": "yayfeng_main",
+          "seed_a": 7,
+          "seed_b": 3,
+          "score": "1-2",
+          "winner": "yayfeng_main",
+          "games": 3
+        }
+      ]
+    },
+    {
+      "h": "Final",
+      "i": "1",
+      "ties": [
+        {
+          "a": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "b": "yayfeng_main",
+          "seed_a": 13,
+          "seed_b": 3,
+          "score": "4-1",
+          "winner": "cadogan_sinopec_finally_came_up_with_agent_name",
+          "games": 5
+        }
+      ]
+    }
+  ],
+  "fate": {
+    "cadogan_sinopec_finally_came_up_with_agent_name": "champion",
+    "yayfeng_main": "out &middot; Final",
+    "kruppvalois_agent": "out &middot; Semi-final",
+    "flybrain_jukebox": "out &middot; Semi-final",
+    "glaxosmithkline_reaper": "out &middot; Quarter-final",
+    "tata_tracker": "out &middot; Quarter-final",
+    "iakabi_reaper": "out &middot; Quarter-final",
+    "emea_techup_afarrand": "out &middot; Quarter-final",
+    "cthvse_striker": "out &middot; Round of 16",
+    "darkmatter_bamf": "out &middot; Round of 16",
+    "glaxo_v1": "out &middot; Round of 16",
+    "redwatch_reaper": "out &middot; Round of 16",
+    "bourboun_analytics_soc_god_player": "out &middot; Round of 16",
+    "bourbon_sentinel": "out &middot; Round of 16",
+    "tblasi_warden": "out &middot; Round of 16",
+    "neo_orsini_pbeyer": "out &middot; Round of 16",
+    "sforza_reformed_the_killer": "out &middot; Play-in"
+  }
+};
+// >>>SOC_RESULTS
+
+const FIELD = [
+  { s:1,  a:"darkmatter_bamf", t:"darkmatter",
+    who:"Oskar Eriksson, Alex MacDonald, Markus Schaeffer, Alejando Perez, Frans van Dortmont, Florian Dahlmann",
+    moves:[["THE_ZORRO","emp"],["THE_BLACK_ROOSTER","snap"],["TANGO_DE_LUCAS","emp"]] },
+  { s:2,  a:"tata_tracker", t:"tata",
+    who:"Ben Xiao, Youssef Hissou, Omar Akil, Kenny Lim, Brett Miller",
+    moves:[["WET_PAINT","snap"],["LOAD_SHEDDING","emp"],["EGRESS_JAM","chaff"]] },
+  { s:3,  a:"yayfeng_main", t:"yayfeng",
+    who:"Yafeng",
+    moves:[["TOLLBOOTH","snap"]] },
+  { s:4,  a:"cthvse_striker", t:"cthvse",
+    who:"Hitesh Vekaria, Ceren",
+    moves:[["PURE_TRAP","snap"],["LIGHTS_DOWN","emp"]] },
+  { s:5,  a:"glaxo_v1", t:"glaxo",
+    who:"Ali",
+    moves:[["NUKE_THEM_FROM_ORBIT","emp"]] },
+  { s:6,  a:"tblasi_warden", t:"tblasi",
+    who:"Thomas Blasi",
+    moves:[["BUYS_EMP","buy"],["BUYS_CHAFF","buy"]],
+    note:"buys ordnance and watches for yours &mdash; no move fires it" },
+  { s:7,  a:"kruppvalois_agent", t:"kruppvalois",
+    who:"Sahir, Tobias, Sophia, Luis Fredr",
+    moves:[["BUYS_EMP","buy"],["BUYS_CHAFF","buy"]],
+    note:"buys ordnance &mdash; no move fires it" },
+  { s:8,  a:"redwatch_reaper", t:"redwatch",
+    who:"Faiza Khalid",
+    moves:[["REAPER_TOLL","snap"],["REAPER_BLACKOUT","emp"],["REAPER_CURFEW","chaff"]] },
+  { s:9,  a:"emea_techup_afarrand", t:"emea_techup",
+    who:"Ali Farrand",
+    moves:[["BUYS_EMP","buy"],["BUYS_CHAFF","buy"]],
+    note:"buys ordnance &mdash; no move fires it" },
+  { s:10, a:"bourboun_analytics_soc_god_player", t:"bourboun_analytics",
+    who:"Markus Eisenschmid, Maurice Saah",
+    moves:[["BUYS_EMP","buy"],["BUYS_CHAFF","buy"]],
+    note:"buys ordnance &mdash; no move fires it" },
+  { s:11, a:"glaxosmithkline_reaper", t:"glaxosmithkline",
+    who:"Rasmus Davidsen",
+    moves:[["SNAP_LAUNCH","snap"]],
+    note:"compiler written and wired &mdash; one link short, no option offers it yet" },
+  { s:12, a:"iakabi_reaper", t:"iakabi",
+    who:"Iakabi",
+    moves:[["PURE_TRAP","snap"],["LIGHTS_DOWN","emp"],["TEMPO_THEFT","chaff"]] },
+  { s:13, a:"cadogan_sinopec_finally_came_up_with_agent_name", t:"cadogan_sinopec",
+    who:"Kjell Geerts, Thomas Dubois, Nicolas Fernandez Martinez, Tingyi Li, Oliver Teller, Damien Saillard, Jennifer Vial, Laura Granek, Martin Savage, Mark Powell, Cristian Romero, Nauman Zahoor",
+    moves:[["PISTOL_TRAP","snap"],["PISTOL_BLIND","snap"],["PISTOL_JAM","chaff"]] },
+  { s:14, a:"neo_orsini_pbeyer", t:"neo_orsini",
+    who:"Pascal Beyer",
+    moves:[["PURE_TRAP","snap"],["PROBE_DENIAL","emp"],["BEACON_DENIAL","snap"],["OPENING_JAM","chaff"]] },
+  { s:15, a:"bourbon_sentinel", t:"bourbon",
+    who:"Florent Huchette",
+    moves:[["SNAP_AT_EYE","snap"],["EMP_THE_SEAM","emp"]] },
+  { s:16, a:"flybrain_jukebox", t:"flybrain",
+    who:"Sharon Freeman, Konrad Ilczuk, Nikhita Bagga, Thomas Dubois, Euan Newlands",
+    moves:[["FLOAT_LIKE_A_BUTTERFLY","chaff"]] },
+  { s:17, a:"sforza_reformed_the_killer", t:"sforza_reformed",
+    who:"Alex Civita, Davinder Mundy, Tom Sprenger, Galiya Warrier, Luis Arcia, Omri de Boers",
+    moves:[["FIRST_CLAIM","snap"],["CUT_THE_EYE","snap"]] },
+];
+
+const seed = (n) => FIELD.find((f) => f.s === n);
+const short = (s) => (s.length > 24 ? s.slice(0, 22) + "\u2026" : s);
+
+/* Standard 16 bracket order. Not typed by hand — copied from what
+   `fixtures.standard_order(16)` computes, because the page and the
+   runner disagreeing about the draw would be the worst possible bug
+   here. The order is built by reflection, which is what guarantees
+   the two top seeds sit in opposite halves and can only meet in the
+   final. 17 entrants means one play-in: the two latest arrivals fight
+   for the slot facing the top seed. */
+const ORDER = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11];
+const PLAYIN = [16, 17];
+
+/* ── who plays who ─────────────────────────────────────────────── */
+
+function chips(h) {
+  const cs = h.moves.map((m) => `<i class="w-${m[1]}">${m[0]}</i>`).join("");
+  return cs + (h.note ? `<em class="mnote">${h.note}</em>` : "");
+}
+
+function agentRow(n) {
+  const h = seed(n);
+  return `
+    <div class="mrow">
+      <div class="mhead">
+        <span class="mseed">${h.s}</span>
+        <span class="mname">${h.a}</span>
+        <span class="mteam">${h.t}</span>
+      </div>
+      <div class="mwho">${h.who}</div>
+      <div class="mmoves">${chips(h)}</div>
+    </div>`;
+}
+
+function tbdRow(label) {
+  return `
+    <div class="mrow tbd">
+      <div class="mhead"><span class="mseed">?</span>
+        <span class="mname">${label}</span></div>
+    </div>`;
+}
+
+function tieCard(kind, a, b) {
+  return `<div class="match">
+      <div class="mkind">${kind}</div>
+      ${a}<div class="mvs">v</div>${b}
+    </div>`;
+}
+
+const r16 = [];
+for (let i = 0; i < 8; i++) r16.push([ORDER[i * 2], ORDER[i * 2 + 1]]);
+
+document.getElementById("who").innerHTML =
+  tieCard("Play-in &middot; the winner meets seed 1",
+          agentRow(PLAYIN[0]), agentRow(PLAYIN[1])) +
+  r16.map(([x, y], i) => {
+    const k = `Round of 16 &middot; match ${i + 1}`;
+    // Seed 16's slot in the bracket order is the one the play-in
+    // fills, so that single tie renders with a placeholder side.
+    return x === 16 ? tieCard(k, agentRow(y), tbdRow("winner of the play-in"))
+         : y === 16 ? tieCard(k, agentRow(x), tbdRow("winner of the play-in"))
+         : tieCard(k, agentRow(x), agentRow(y));
+  }).join("");
+
+/* ── the field ─────────────────────────────────────────────────── */
+
+document.getElementById("field").innerHTML = FIELD.map(
+  (f) => `<div class="ag">${agentRow(f.s)}</div>`
+).join("");
+
+/* ── tabs ──────────────────────────────────────────────────────── */
+
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("on"));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("on"));
+    tab.classList.add("on");
+    document.getElementById(tab.dataset.panel).classList.add("on");
+  });
+});
+
+/* ── the bracket ───────────────────────────────────────────────── */
+
+/* No weapon badge in the bracket. It used to carry one, and it was
+   worse than nothing: "can it shoot" turns out to be five different
+   answers, and a single dot flattened a team that wired the whole
+   chain into the same mark as a team that bought a charge it cannot
+   fire. The matchup cards below say which is which, in words. */
+function side(n, label) {
+  if (label) return `<div class="s tbd"><span class="n"></span>${label}</div>`;
+  const f = seed(n);
+  return `<div class="s"><span class="n">${f.s}</span>${short(f.a)}</div>`;
+}
+
+/* One side of a *played* tie. Takes a name rather than a seed, because
+   from the quarter-finals on the bracket is populated by results and
+   not by the draw — who is in a quarter-final is a fact about what
+   happened, so there is no seed to look the name up from. */
+function playedSide(name, seedNo, won, lost, games) {
+  if (!name) return `<div class="s tbd"><span class="n"></span>winner</div>`;
+  const cls = won ? " won" : (lost ? " lost" : "");
+  const g = (games === "" || games == null) ? "" : `<span class="g">${games}</span>`;
+  return `<div class="s${cls}"><span class="n">${seedNo || ""}</span>${
+    short(name)}${g}</div>`;
+}
+
+const ROUNDS = [
+  { h: "Play-in", i: "1 match", n: 1, playin: true },
+  { h: "Round of 16", i: "8 matches", n: 8 },
+  { h: "Quarter-finals", i: "4", n: 4 },
+  { h: "Semi-finals", i: "2", n: 2 },
+  { h: "Final", i: "1", n: 1 },
+];
+
+/* Two renderers, one for each honest state of the page.
+
+   Without results the bracket is drawn from the *draw*, and every
+   round after the first says "winner" — which is what an announcement
+   should say before anything is played. With results it is drawn from
+   them, which is the only way to get past the round of 16 at all. */
+function drawnBracket() {
+  return ROUNDS.map((r, ri) => {
+    let cells = "";
+    for (let i = 0; i < r.n; i++) {
+      let body;
+      if (r.playin) {
+        body = side(PLAYIN[0]) + side(PLAYIN[1]);
+      } else if (ri === 1) {
+        const [x, y] = r16[i];
+        body = side(x === 16 ? null : x, x === 16 ? "play-in winner" : null) +
+               side(y === 16 ? null : y, y === 16 ? "play-in winner" : null);
+      } else {
+        body = side(null, "winner") + side(null, "winner");
+      }
+      cells += `<div class="cell"><div class="tie">${body}</div></div>`;
+    }
+    const last = ri === ROUNDS.length - 1 ? " last" : "";
+    return `<div class="rnd${last}"><div class="rh">${r.h} <i>&middot; ${
+      r.i}</i></div>${cells}</div>`;
+  }).join("");
+}
+
+function playedBracket() {
+  return RESULTS.rounds.map((r, ri, arr) => {
+    const cells = (r.ties || []).map((t) => {
+      const done = !!t.winner;
+      const live = !done && t.games > 0;
+      const wa = done && t.winner === t.a;
+      const wb = done && t.winner === t.b;
+      // Stored a-then-b, so b's own tally is the same string reversed.
+      // Split here rather than bake both, so the generated block does
+      // not carry one number twice and risk the two disagreeing.
+      const p = String(t.score || "").split("-");
+      return `<div class="cell">
+          <div class="tie${done ? " done" : (live ? " live" : "")}">
+            ${playedSide(t.a, t.seed_a, wa, done && !wa, done ? p[0] : "")}
+            ${playedSide(t.b, t.seed_b, wb, done && !wb, done ? p[1] : "")}
+          </div>
+        </div>`;
+    }).join("");
+    const last = ri === arr.length - 1 ? " last" : "";
+    return `<div class="rnd${last}"><div class="rh">${r.h} <i>&middot; ${
+      r.i}</i></div>${cells}</div>`;
+  }).join("");
+}
+
+document.getElementById("shape").innerHTML =
+  ((RESULTS.rounds && RESULTS.rounds.length) ? playedBracket() : drawnBracket())
+  + `<div class="rnd last" style="min-width:140px;justify-content:center">
+       <div class="rh">Champion</div>
+       <div class="cup">${RESULTS.champion
+          ? `<div style="font-size:11px;letter-spacing:.08em">${
+               short(RESULTS.champion)}</div>`
+          : "&#9733;"}</div></div>`;
+
+/* ── the state of play, stamped on the page ────────────────────── */
+
+/* The snapshot line is the only thing standing between a reader and
+   quoting a fortnight-old bracket at somebody, so it is generated
+   rather than typed, and it names the round rather than just a time —
+   "before the semi-finals" is what a reader actually needs, and a
+   timestamp alone makes them work it out. */
+document.querySelector(".snapshot").innerHTML =
+  `Snapshot &middot; ${RESULTS.snapshot}`;
+
+if (RESULTS.played) {
+  const figs = document.querySelectorAll(".figures .fig");
+  figs[3].innerHTML = `<div class="n">${RESULTS.played}<span class="dim"
+      style="font-size:15px">/${RESULTS.total}</span></div>
+    <div class="k">matches played</div>`;
+}
+
+/* How far each agent got, under its card in the field list. Added
+   after the list is built so the field renderer stays the one about
+   who built what. */
+Object.entries(RESULTS.fate || {}).forEach(([name, fate]) => {
+  const row = [...document.querySelectorAll("#field .ag")].find(
+    (el) => (el.querySelector(".mname") || {}).textContent === name);
+  if (!row || !fate) return;
+  const cls = fate === "champion" ? "champ" : (/^out\b/.test(fate) ? "" : "in");
+  row.insertAdjacentHTML("beforeend",
+    `<div class="fate ${cls}">${fate}</div>`);
+});
+
+/* Results onto the matchup cards — play-in and round of 16, each only
+   against its own cards.
+
+   Scoping by round matters more than it looks. The play-in card names
+   the same two agents that appear again in the round of 16, so a
+   search across every card matched the play-in first and stamped the
+   round-of-16 result onto it. Two cards silently wrong, and a count
+   that said everything had been filled in.
+
+   Within a round, either name is enough: one round-of-16 card is
+   drawn with a placeholder where the play-in winner goes, so it
+   carries a single real name, and an agent appears in exactly one tie
+   per round. */
+function stampRound(match, kindRe) {
+  const cards = [...document.querySelectorAll("#who .match")].filter(
+    (el) => kindRe.test((el.querySelector(".mkind") || {}).textContent || ""));
+  ((((RESULTS.rounds || []).find((r) => match.test(r.h))) || {}).ties || [])
+    .forEach((t) => {
+      if (!t.winner) return;
+      const card = cards.find((el) => {
+        const ns = [...el.querySelectorAll(".mname")].map((x) => x.textContent);
+        return ns.includes(t.a) || ns.includes(t.b);
+      });
+      if (!card) return;
+      const kind = card.querySelector(".mkind");
+      if (kind) {
+        // Oriented to the winner. Stored a-then-b, so printing it raw
+        // beside the winner's name gives "flybrain_jukebox 0-2", which
+        // reads as a defeat for the agent that won.
+        const p = String(t.score || "").split("-");
+        const sc = t.winner === t.b ? `${p[1]}-${p[0]}` : t.score;
+        kind.insertAdjacentHTML("beforeend",
+          `<span class="res"><b>${short(t.winner)}</b> ${sc}</span>`);
+      }
+      // And say who the placeholder turned out to be, rather than
+      // leaving a reader to infer it from the play-in card above.
+      const tbd = card.querySelector(".mrow.tbd .mname");
+      if (tbd) {
+        const ns = [...card.querySelectorAll(".mname")].map((x) => x.textContent);
+        tbd.textContent = ns.includes(t.a) ? t.b : t.a;
+      }
+    });
+}
+
+stampRound(/play-?in/i, /play-?in/i);
+stampRound(/round of 16/i, /round of 16/i);
+</script>
+
+</body>
+</html>

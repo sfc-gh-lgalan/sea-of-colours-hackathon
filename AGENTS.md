@@ -54,6 +54,16 @@ This file is always-on context for AI agents; keep it lean and current.
   mint a fork, improve it, score it, publish it, league. Its companion
   `docs/AGENT_LOOP_PLAN.md` is the reasoning behind the tooling and
   tracks what's built vs still open.
+- `docs/RUNNING_A_LEAGUE.md` — **the organiser's runbook**, and the one
+  to read before running the day's competition: collect → roster →
+  plan → run → publish, with the real cost of the first one (17
+  entrants, 16 matches, 44 seasons, 3.7h, 2.7GB) and a trap list that
+  is entirely things that already went wrong. Its design counterpart
+  is `sea_of_colours/league/README.md`. Note `--jobs` is the **only**
+  throttle on Cortex — nothing in the path rate-limits — and that a
+  seat which cannot reach the model falls back to the heuristic
+  *silently*, so a whole league can complete and be a heuristic
+  tournament.
 - `docs/TEAM_LEADER_GUIDE.md` — the same day seen by the one person per
   team who owns *sequence* rather than code: install → tutorial →
   play → mint → publish empty → weapon shape → name the moves → the
@@ -188,6 +198,20 @@ sea_of_colours/
                Markdown card per turn (orbit and night kept separate).
   cards.py     Renders one turn as Markdown, from a store row or a harness
                envelope. Shared by seasons.py and /api/game/{id}/agent-cards.
+league/          The knockout league (v1.50) — `soc cup`. Takes a field of
+                 forked agents and produces a champion, a public bracket
+                 and a replay of every night played. See its README.md
+                 for the design and `docs/RUNNING_A_LEAGUE.md` to run one.
+                 Three rules it exists to keep. The competition rule lives
+                 in fixtures.py (pure, no IO) and never in the concurrency
+                 code. Wins-needed is DERIVED from match length, because
+                 the final is best-of-seven and every other round
+                 best-of-three — a hardcoded `2` awards the final to
+                 whoever gets there first. And every season is played in a
+                 fresh process: the backend resolves at import time, so a
+                 season run in the parent silently lands on `memory` and
+                 its replay is gone while its score is not. That one cost
+                 two games of the first final; an AST scan now guards it.
   battles/     DEPRECATED (v1.42) — superseded by turnlab/. Still runs, still
                  tested, nothing removed; don't build on it and don't spend
                  effort keeping its constructed boards in step with a rules
