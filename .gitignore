@@ -158,3 +158,4 @@ sea_of_colours/orchestrator_2/harnesses/*/
 # loop until someone re-shoots or drops the files in.
 /server/static/media/
 /weaponx/
+/.praxis-work/
