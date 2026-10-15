@@ -3332,6 +3332,33 @@ def _ramp(kfs: List[Dict[str, float]], key: str, v0: float,
         p = f"clip((T-{t:.3f})/{d:.4f},0,1)"
         s = f"({p}*{p}*(3-2*{p}))"
         ramp = f"({prev:.3f}+({v:.3f}-{prev:.3f})*{s})"
+        if kfs[i].get("recip") and prev > 0 and v > 0:
+            # v1.56 — interpolate 1/z instead of z, for a move that
+            # goes STRAIGHT at its subject.
+            #
+            # Apparent magnification is multiplicative and this ramp is
+            # linear, so half way through a 1.6 -> 5.0 push the camera
+            # is already at z 3.3 — most of the zoom — while the centre
+            # has travelled only half its distance. The subject's
+            # distance from the middle of frame is (1-s)*z, and with z
+            # linear that RISES before it falls: measured on the
+            # station pushes it went 1.59 frames out to 1.83 at s=0.3
+            # before collapsing to 0. On screen that is a zoom into the
+            # middle of the board followed by a late swing sideways,
+            # which is what it looks like and what it is.
+            #
+            # Linear in 1/z (the crop's width) makes the same quantity
+            # (1-s)/w, whose derivative is a constant -1/w1 over w
+            # squared — negative everywhere, so the subject closes on
+            # the middle of frame from the first frame to the last and
+            # the move reads as one push rather than a zoom and a pan.
+            #
+            # Opt-in per keyframe, and left off everywhere else on
+            # purpose: it changes the SHAPE of a move, so switching it
+            # on globally would silently re-time every film in the
+            # repo and none of them would match their own stills.
+            a, b = 1.0 / prev, 1.0 / v
+            ramp = f"(1/({a:.6f}+({b:.6f}-{a:.6f})*{s}))"
         if i == len(kfs) - 1:
             expr = f"if(lt(T,{t + d:.3f}),{ramp},{v:.3f})"
         else:
@@ -3341,6 +3368,13 @@ def _ramp(kfs: List[Dict[str, float]], key: str, v0: float,
         if i == 0:
             expr = f"if(lt(T,{t:.3f}),{prev:.3f},{expr})"
     return expr
+
+
+#: What Chromium hands Playwright, measured rather than assumed — see
+#: `backstage/probes/_probe_record_fps.py`. There is no setting that
+#: changes it, so it is the ceiling on how smoothly page CONTENT can
+#: move and the divisor for how often the camera can be recomputed.
+_BROWSER_FPS = 25
 
 
 def _camera_filter(cam: List[Dict[str, float]], start: float,
@@ -3358,7 +3392,11 @@ def _camera_filter(cam: List[Dict[str, float]], start: float,
     lets the shoot resolution change without touching a single film.
     """
     kfs = sorted(({"t": k["t"] - start, "ms": k["ms"], "z": k["z"],
-                   "cx": k["cx"], "cy": k["cy"]} for k in cam),
+                   "cx": k["cx"], "cy": k["cy"],
+                   # Carried, not dropped: `_ramp` reads it off the
+                   # keyframe and this is the only place it could be
+                   # lost between the shoot and the filter.
+                   "recip": k.get("recip", False)} for k in cam),
                  key=lambda k: k["t"])
     # Anything wholly before the cut sets the opening state instead.
     z0, cx0, cy0 = 1.0, VIEWPORT["width"] / 2.0, VIEWPORT["height"] / 2.0
@@ -3383,8 +3421,16 @@ def _camera_filter(cam: List[Dict[str, float]], start: float,
     # the edge and ffmpeg clips it to a black bar.
     x = f"clip(({cx})-(iw/zoom)/2,0,iw-iw/zoom)"
     y = f"clip(({cy})-(ih/zoom)/2,0,ih-ih/zoom)"
+    # `d` is how many OUTPUT frames each input frame is held for, and it
+    # has to track the rate or the clip changes speed: at d=1 zoompan
+    # emits one frame per input frame whatever `fps` says, so asking for
+    # 50 against Chromium's 25 just relabels the timebase and the clip
+    # plays at double speed in half the time. Holding each source frame
+    # twice keeps the duration and gives the camera two positions per
+    # frame of content, which is the whole point of asking for 50.
+    d = max(1, int(round(fps / float(_BROWSER_FPS))))
     return (f"zoompan=z='max(1,{z})':x='{x}':y='{y}'"
-            f":d=1:s={VIEWPORT['width']}x{VIEWPORT['height']}:fps={fps}")
+            f":d={d}:s={VIEWPORT['width']}x{VIEWPORT['height']}:fps={fps}")
 
 
 def _splice(whole: str, parts: List[str]) -> str:
@@ -3493,7 +3539,9 @@ def _trim_start(lead: float) -> float:
 
 
 def _post(final: pathlib.Path, lead: float, trim: bool,
-          cam: Optional[List[Dict[str, float]]] = None) -> str:
+          cam: Optional[List[Dict[str, float]]] = None,
+          keep_size: bool = False, fps: int = 25,
+          dur: Optional[float] = None) -> str:
     """Cut the boot off the front, apply the camera, and re-encode.
 
     Three problems, one pass. The recording starts when the page is
@@ -3508,23 +3556,49 @@ def _post(final: pathlib.Path, lead: float, trim: bool,
 
     Best-effort: no ffmpeg, or a failed encode, leaves the raw file in
     place. A slightly long film is worth having; no film is not.
+
+    ``keep_size`` opts out of the normalise-to-viewport step. Every film
+    that ships in the modal wants to be exactly one size, which is why
+    that step exists — but a recording deliberately shot at 2x so its
+    close-ups have real pixels is not one of them, and scaling it back
+    down here quietly threw the extra resolution away before anything
+    could crop it.
+
+    ``fps`` is the OUTPUT rate. Chromium hands Playwright 25 frames a
+    second and there is no setting that changes it, so this cannot make
+    the page animate more smoothly — what it does change is how often
+    the camera is recomputed, because ``zoompan`` evaluates its crop per
+    output frame. On a long slow move that is the difference between 25
+    camera positions a second and 50, and it is the move that reads as
+    juddery, not the content. Left at 25 the behaviour is unchanged.
+
+    ``dur`` caps the finished length. Worth setting when a clip has to
+    match others to the frame — the recording runs a little past its
+    mark and the overrun is not constant.
     """
     if not trim:
         return ""
     start = _trim_start(lead)
     vw, vh = _dims(final)
-    zoom = _camera_filter(cam or [], start, vw, vh) if cam else None
+    zoom = _camera_filter(cam or [], start, vw, vh, fps) if cam else None
     tmp = final.with_suffix(".post.webm")
     script = final.with_suffix(".filter.txt")
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-ss", f"{start:.2f}", "-i", str(final)]
+    if dur:
+        cmd += ["-t", f"{dur:.3f}"]
     if zoom:
         # Via a file: a seven-keyframe camera is tens of kilobytes of
         # expression and long enough to trip the argument limit.
         script.write_text(zoom)
         cmd += ["-filter_script:v", str(script)]
-    elif (vw, vh) != (VIEWPORT["width"], VIEWPORT["height"]):
+    elif not keep_size and (vw, vh) != (VIEWPORT["width"], VIEWPORT["height"]):
         cmd += ["-vf", f"scale={VIEWPORT['width']}:{VIEWPORT['height']}"]
+    if not zoom and fps != _BROWSER_FPS:
+        # `zoompan` carries the rate when there is a camera; without one
+        # it has to be asked for, or a clip that has to cut against the
+        # 50fps ones arrives at 25 and the editor has to conform it.
+        cmd += ["-r", str(fps)]
     cmd += [
         "-c:v", "libvpx", "-crf", "32", "-b:v", "0",
         "-qmin", "4", "-qmax", "44",
