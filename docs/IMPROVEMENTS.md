@@ -414,6 +414,94 @@ names in the real order. See `backstage/films/README.md`; the shoot
 fails loudly if the hook goes away, rather than quietly delivering
 four stills of a board that was already there.
 
+### IMP-5 · Replace CRT mode with the trailer's signal look — `open`
+
+Throw away the current CRT mode and put the PRAXIS trailer's screen
+texture in its place, behind the same SETTINGS toggle: scanlines over a
+phosphor mask, radial chromatic aberration, bloom, the rolling refresh
+band, grain, and the torn-band glitch. It must cost close to nothing
+with the toggle on.
+
+**Why.** The trailer (October 2026) got a look the game does not have,
+and it is the look people will arrive expecting. The CRT mode we ship
+is the opposite of it: it looks worse, and **it visibly slows the
+whole UI**. Nobody should turn it on today.
+
+**Why the current one is slow — suspected, measure before believing.**
+It *wraps* the page rather than sitting on top of it. `#crt-viewport`
+holds the header, drawer and board, and `.crt-viewport--on` puts a
+`filter` and a 3D `perspective(…) rotateX(…)` transform on that
+wrapper (`styles.css`, the CRT shell block), plus layered
+`text-shadow` on labels. So the whole UI becomes one filtered layer,
+and any repaint inside it, which the board does constantly while a
+night animates, re-rasterises everything. The same wrapper `filter` is
+why `position: fixed` breaks inside it (see the comments in
+`index.html`). A performance trace with the toggle on and off, over a
+replay playing, is the first job, and it is the number the replacement
+is judged against.
+
+**The rule for the replacement: decorate, never wrap.** Effects go in
+one overlay above the page with `pointer-events: none`, ideally a
+single WebGL canvas drawing scanlines, triad, vignette, roll band,
+flicker and grain in one cheap pass. The DOM underneath is never
+filtered, transformed or re-styled, so turning it on cannot change
+layout, hit-testing, or what the probes measure. The current mode's
+pieces (`syncCrtUi`, `scheduleCrtGlitch`, the `crt-*` rules, the fake
+cursor, the intensity/curve sliders) go, not sit alongside.
+
+**What the trailer does**, every number a default in
+`backstage/films/crt_texture.py`, which is the reference. It cannot be
+imported: `backstage/` is a one-way boundary, so this is a
+reimplementation in `server/static/`, not a port.
+
+- **Scanlines**: a 3px row profile (darkest row 40% down) multiplied
+  with a 7% RGB triad, gained back so brightness does not move.
+- **Aberration is radial**: red pushed out, blue pulled in, *zero at
+  the centre* and ~3px at the edge, plus a 0.8px hairline split. The
+  board in the middle stays sharp.
+- **Bloom** from the bright parts only, **grain** fresh every frame,
+  **1.2% flicker**, and a **soft bright band rolling down the tube**
+  every 3.2s.
+- **Tears** shove horizontal bands sideways, split their channels and
+  drop a faint ghost of one band lower. The trailer tears on every hard
+  cut; in the game the equivalent is a day change or a replay frame
+  switch.
+- **The close look**: the glass shows more as the camera zooms in, with
+  darker scanlines and a stronger triad and fringe. The map zoom
+  (`nudgeMapZoom`) could drive it.
+
+**The hard part.** An overlay cannot see the pixels beneath it, and two
+of these effects need them: radial aberration and bloom both resample
+the picture, and tears move it. The board is DOM cells, not a canvas,
+so doing either for real means filtering the DOM again, which is the
+trap above. Candidates, none chosen: fake the fringe as coloured edge
+light in the vignette, where it lives anyway; let tears be brief
+overlay bands, plus a transform on just the board for the ~100ms a
+burst lasts; and drop bloom, or limit it to elements that already glow.
+
+**Open questions, none settled.**
+- **Glitch rate.** The trailer bursts every ~1.6s, which is unplayable
+  as a UI. A rhythm like today's 12–45s, with the trailer's tear shape,
+  is probably right.
+- **The caption type.** The trailer's typed cards (key-kick, jitter)
+  and the unicode density colour waves (`░▒▓█`, already used by IMP-4's
+  station teleport) could reach the season-victor sweep or the boot
+  wordmark. That is scope creep worth naming, not doing.
+
+**Things that must not break.**
+- **Reduced motion:** `prefers-reduced-motion` turns the whole effect
+  off, as it does today.
+- **Default off:** the toggle stays unchecked and remembered in
+  `localStorage` (`sea_of_colours:crtOn`). That is the only reason the
+  teaching films are clean: the film rig never touches CRT and gets a
+  fresh profile each take. The rig should still force the effect off
+  explicitly, the way it sets `window.__SOC_NO_BOOT__`, rather than
+  rely on that.
+- **A probe ships with the change:** a `backstage/probes/` harness that
+  screenshots a board with the toggle on and off and times a replay
+  night both ways, because a static page cannot report its own
+  breakage or its own slowness.
+
 ---
 
 ## BUG — known defects, still live
