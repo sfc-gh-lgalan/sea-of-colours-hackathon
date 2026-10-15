@@ -1345,6 +1345,126 @@ def cmd_league(args) -> int:
     return 0
 
 
+def cmd_prune(args) -> int:
+    """Delete old sessions, loudly, and only when asked twice.
+
+    Deliberately not a flag on some other command. Ten gigabytes of
+    seasons is easy to make and impossible to undo, so this gets its
+    own verb, prints the whole plan, and does nothing without --yes.
+    """
+    from sea_of_colours.snowpark import housekeeping as hk
+
+    store_dir = args.store_dir or os.environ.get(
+        "SOC_STORE_DIR", str(hk.DEFAULT_STORE_DIR))
+
+    if not (args.local or args.local_resumable or args.remote_resumable):
+        print("Nothing selected. Pick at least one scope:\n"
+              "  --local             every local session\n"
+              "  --local-resumable   local seasons mid-game\n"
+              "  --remote-resumable  Snowflake seasons mid-game\n"
+              "  --cards             card exports under reports/seasons/")
+        return 2
+
+    # A live server is the good path, not an obstacle: it can see the
+    # Snowflake store (which we may have no credentials for from here)
+    # and deleting through it keeps its in-memory routing honest.
+    base = f"http://127.0.0.1:{args.port}"
+    who = None if args.offline else hk.server_at(base)
+    if who:
+        print(f"→ through the server on :{args.port} (pid {who.get('pid')}, "
+              f"up {who.get('uptime_s', 0) / 60:.0f}m)")
+        rows = hk.list_via_api(base)
+        via = f"server :{args.port}"
+    else:
+        if args.remote_resumable and not args.offline:
+            print(f"! no server on :{args.port}, so Snowflake sessions are "
+                  f"invisible from here. Start one, or drop "
+                  f"--remote-resumable.")
+            return 2
+        print(f"→ straight to {store_dir} (no server)")
+        rows = hk.list_local(store_dir)
+        via, base = "disk", None
+
+    # The league's replays are never candidates, whatever the scope.
+    # They are what every link on the published bracket points at.
+    protect = hk.league_sessions()
+    if protect:
+        print(f"  {len(protect)} league replay(s) protected")
+
+    plan = hk.make_plan(
+        rows,
+        local_all=args.local,
+        local_resumable=args.local_resumable,
+        remote_resumable=args.remote_resumable,
+        cards=args.cards,
+        store_dir=store_dir,
+        protect=protect,
+        via=via,
+    )
+
+    # --keep is applied after selection rather than inside it, so a
+    # spared session shows up as spared instead of vanishing from both
+    # columns and leaving the counts not adding up.
+    if args.keep:
+        spared = [c for c in plan.take
+                  if any(k in c.season_name or c.session_id.startswith(k)
+                         for k in args.keep)]
+        for c in spared:
+            c.reason = "spared by --keep"
+            plan.take.remove(c)
+            plan.keep.append(c)
+        if spared:
+            print(f"  --keep spares {len(spared)}")
+
+    print(f"\n{len(rows)} sessions visible; "
+          f"{len(plan.take)} selected, {len(plan.keep)} left alone")
+    for src, n in sorted(plan.by_source().items()):
+        print(f"    {src:<12} {n}")
+    if plan.card_dirs:
+        print(f"    {'cards':<12} {len(plan.card_dirs)} directories")
+    if plan.bytes_on_disk:
+        print(f"  {hk.human_bytes(plan.bytes_on_disk)} would come back")
+
+    named = [c for c in plan.take if not c.season_name.startswith("battle::")]
+    if named:
+        print(f"\n  {len(named)} are named seasons rather than battle "
+              f"leftovers — worth a look before you say yes:")
+        for c in named[:20]:
+            print(f"    {c.season_name[:34]:<34} day={c.day:<3} "
+                  f"{c.phase:<10} {c.reason}")
+        if len(named) > 20:
+            print(f"    … and {len(named) - 20} more")
+
+    protected = [c for c in plan.keep if c.reason.startswith("eval")]
+    if protected:
+        print(f"\n  {len(protected)} eval sessions are protected and were "
+              f"never candidates")
+
+    if not args.yes:
+        print("\nDry run. Add --yes to delete.")
+        return 0
+    if not plan.take and not plan.card_dirs:
+        print("\nNothing to do.")
+        return 0
+
+    print(f"\nDeleting {len(plan.take)}…")
+
+    def step(i, total, c, err):
+        if err:
+            print(f"  [{i}/{total}] FAILED {c.session_id[:8]} {err}")
+        elif i % 10 == 0 or i == total:
+            print(f"  [{i}/{total}]")
+
+    failures = hk.apply(plan, base=base, store_dir=store_dir, on_step=step)
+    ok = len(plan.take) - len(failures)
+    print(f"\n{ok} deleted, {len(failures)} failed")
+    if plan.card_dirs:
+        print(f"{len(plan.card_dirs)} card directories removed")
+    for c, err in failures[:10]:
+        print(f"  {c.session_id[:8]} {c.season_name[:28]:<28} {err}")
+    return 1 if failures else 0
+
+
 # ── wiring ──────────────────────────────────────────────────────────
 
 
@@ -1533,6 +1653,30 @@ def build_parser() -> argparse.ArgumentParser:
     lg.add_argument("--json", default=None)
     lg.add_argument("--include-baseline", action="store_true", default=True)
     lg.set_defaults(fn=cmd_league)
+
+    pr = sub.add_parser(
+        "prune", help="delete old sessions (dry-run unless --yes)",
+        description="Dry-run by default. Prints what it would delete, "
+                    "grouped, with the disk it would return.",
+    )
+    pr.add_argument("--local", action="store_true",
+                    help="every session in the local file store")
+    pr.add_argument("--local-resumable", action="store_true",
+                    help="only local seasons that are mid-game")
+    pr.add_argument("--remote-resumable", action="store_true",
+                    help="only Snowflake seasons that are mid-game")
+    pr.add_argument("--cards", action="store_true",
+                    help="also reports/seasons/ card exports")
+    pr.add_argument("--keep", action="append", default=[],
+                    help="a season name or id prefix to spare; repeatable")
+    pr.add_argument("--store-dir", default=None,
+                    help="file-backend directory (default ./seasons)")
+    pr.add_argument("--port", type=int, default=8000,
+                    help="a running server to delete through")
+    pr.add_argument("--offline", action="store_true",
+                    help="ignore any server and go straight to disk")
+    pr.add_argument("--yes", action="store_true", help="actually delete")
+    pr.set_defaults(fn=cmd_prune)
 
     return p
 
