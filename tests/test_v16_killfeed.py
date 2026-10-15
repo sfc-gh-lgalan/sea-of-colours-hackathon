@@ -13,6 +13,7 @@ from sea_of_colours.game.entities import Entity
 from sea_of_colours.game.policy import (
     ChaffFlareMove,
     EmpLaunchMove,
+    SnapLaunchMove,
     StepMove,
 )
 from sea_of_colours.game.session import GameSession, Phase
@@ -64,6 +65,32 @@ def test_emp_probe_kill_attributed() -> None:
     NightSimulator().run(sess, {"p1": [EmpLaunchMove(at=(8, 8))]})
 
     assert _cell(sess.combat_attrib, "emp_probes", "p1", "p2") == 1
+    # And it is NOT also counted as a snap kill (v1.50).
+    assert _cell(sess.combat_attrib, "snap_probes", "p1", "p2") == 0
+
+
+def test_snap_probe_kill_is_not_reported_as_an_emp_kill() -> None:
+    """v1.50 — the SNAP reuses the EMP's blast sweep internally.
+
+    That sweep credited every probe it destroyed to ``emp_probes``
+    whoever fired, so an agent that had never bought an EMP could end a
+    season credited with probes "EMP'd" — which is what both finalists
+    of the first knockout league showed. Same reason
+    ``snap_harvesters`` is kept apart from ``harv_damaged``: a shot
+    asset must not read as another weapon's casualty.
+    """
+    sess = _fresh_night_session()
+    _stock_weapon(sess, "p1", "snap", n=1)
+    sess.entities["probe_p2_z"] = Entity(
+        id="probe_p2_z", entity_type="probe", owner="p2", x=8, y=8,
+    )
+
+    NightSimulator().run(sess, {"p1": [SnapLaunchMove(at=(8, 8))]})
+
+    assert "probe_p2_z" not in sess.entities, "the beacon should be gone"
+    assert _cell(sess.combat_attrib, "snap_probes", "p1", "p2") == 1
+    assert _cell(sess.combat_attrib, "emp_probes", "p1", "p2") == 0, \
+        "a SNAP kill must not land in the EMP row"
 
 
 def test_emp_harvester_catch_is_distinct_and_attributed() -> None:

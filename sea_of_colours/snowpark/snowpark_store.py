@@ -901,13 +901,21 @@ class SnowparkSocStore:
             # unaffected; these ride in the ``[8:]`` trailing group.
             "cells_player_p3",
             "cells_player_p4",
+            # v1.53 — SNAP's FX payload and its scorch-mark snapshot.
+            # Missing since the weapon shipped in v1.36: the frame was
+            # written with its tag and caption and the two VARIANTs were
+            # dropped, so a Snowflake season knew a SNAP had been fired
+            # and had nothing to animate it with. Appended at the END for
+            # the same reason p3/p4 were.
+            "snap",
+            "snap_clouds",
         )
         cols = (
             "session_id, day, frame_idx, global_idx, caption, tag, owner, "
             "cells, cells_player_p1, cells_player_p2, entities, hoard, "
             "collisions, crushed_probes, scheduled_orders, attempted, "
             "outcome, hour, emp, mine, chaff, emp_clouds, mines_active, "
-            "cells_player_p3, cells_player_p4"
+            "cells_player_p3, cells_player_p4, snap, snap_clouds"
         )
         # v1.41 — ONE BOUND JSON ARRAY PER CHUNK, flattened server-side.
         #
@@ -1022,6 +1030,9 @@ class SnowparkSocStore:
                 # v0.9.11 — p3/p4 percepts (N-seat OBS replay).
                 "cells_player_p3",
                 "cells_player_p4",
+                # v1.53 — SNAP. See the write path.
+                "snap",
+                "snap_clouds",
             ):
                 v = d.get(col)
                 if isinstance(v, str):

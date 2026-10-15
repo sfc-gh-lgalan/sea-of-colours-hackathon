@@ -18,6 +18,7 @@ import re
 import pytest
 
 from sea_of_colours.evals import cards, dispatch, seasons
+from sea_of_colours.snowpark import engine as soc_engine
 
 
 @pytest.fixture
@@ -95,6 +96,23 @@ def test_the_season_is_scored(played):
 def test_a_heuristic_season_never_reports_a_fallback(played):
     """Fallback means "the model was unreachable". A heuristic has none."""
     assert played.fallback_turns == 0
+
+
+def test_seats_are_named_after_the_agents_holding_them(played, file_backend):
+    """The default, and the one a season under review needs.
+
+    A season is read after the fact and often by someone who did not run
+    it, so a scoreboard that does not say which agent held which seat is
+    a scoreboard you cannot act on.
+    """
+    view = soc_engine.get_view(file_backend, played.session_id, "p1")
+    names = {s: (pr.get("display_name") or "")
+             for s, pr in view["player_profiles"].items()}
+    # `heuristic` resolves to the RED_HARVEST slug, which is the point —
+    # the name follows the agent that actually took the seat, not the
+    # alias it was asked for.
+    assert "RED_HARVEST" in names["p1"].upper()
+    assert "LITE" in names["p2"].upper()
 
 
 def test_the_winner_is_the_top_score():

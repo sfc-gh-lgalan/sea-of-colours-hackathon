@@ -171,6 +171,29 @@ Import the action, add the `apply_build_*` branch.
 **Columns are never dropped.** Archived seasons keep replaying, which is
 why the mine retirement left the schema, the store and the FX intact.
 
+⚠️ **This is the step that gets missed, and it fails silently.** SNAP
+shipped in v1.36 without either column and nobody noticed until v1.53.
+The engine writes the payload onto the frame, the Snowflake store
+writes only the columns it knows about, and the rest go on the floor
+with no error and no warning. Everything else still agrees the weapon
+fired — the frame is there, tagged, captioned, in the log and on the
+scoreboard — and the replay shows nothing, because the FX is gated on
+the payload. Worse, the file store keeps frames verbatim, so it works
+in every local test and fails only on the backend the league runs on.
+
+Three things follow. Add the column in **both** places in
+`soc_schema.sql` (the `CREATE TABLE` and the idempotent `ALTER` block)
+— the CREATE alone is a no-op on every existing deploy. Ship the
+schema and the store **together**: the moment `cols` names a column,
+an account that has not been re-deployed fails every replay write.
+And `tests/test_replay_frame_columns.py` will now fail you if you
+forget, which is the only reason this note can be short — read the
+assertion message, it names the file and the line to change.
+
+Payloads already written cannot be recovered, only reconstructed, and
+only to the extent the caption happens to carry (`docs/OUTSTANDING_ISSUES.md`
+#62 is the worked example, and it lost the kill records).
+
 ---
 
 ## 3. Agent-facing view

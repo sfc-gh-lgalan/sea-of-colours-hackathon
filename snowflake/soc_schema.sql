@@ -286,6 +286,22 @@ CREATE TABLE IF NOT EXISTS SOC_REPLAY_FRAME (
     -- v0.9.11 — p3/p4 percept snapshots (N-seat OBS replay).
     cells_player_p3   VARIANT,
     cells_player_p4   VARIANT,
+    -- v1.53 — SNAP (RULEBOOK §4.9.7), which landed in v1.36 and never
+    -- got a home here. The engine wrote `snap` / `snap_clouds` onto the
+    -- frame exactly like `emp` / `emp_clouds`, and this table silently
+    -- dropped both, so on a Snowflake season a SNAP had a tagged frame
+    -- and a log line but no payload — and the watcher's launch FX is
+    -- gated on the payload. It played on `seasons/` and vanished on
+    -- Snowflake, which is why it went a whole competition unnoticed.
+    --   snap        : [{kind:'snap_launch', owner, at, destroyed_probes,
+    --                   damaged_harvesters, ...}]
+    --   snap_clouds : per-frame snapshot of every live scorch mark, so
+    --                 a scrub paints the mark without re-firing.
+    -- ADDING A WEAPON MEANS ADDING COLUMNS HERE. See
+    -- docs/ADDING_A_WEAPON.md — this table is the step that gets missed
+    -- because nothing fails, it just quietly forgets.
+    snap              VARIANT,
+    snap_clouds       VARIANT,
     ts                TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     PRIMARY KEY (session_id, day, frame_idx)
 );
@@ -317,6 +333,13 @@ ALTER TABLE SOC_REPLAY_FRAME ADD COLUMN IF NOT EXISTS mines_active     VARIANT;
 -- absent on round-trip). Idempotent on fresh tables.
 ALTER TABLE SOC_REPLAY_FRAME ADD COLUMN IF NOT EXISTS cells_player_p3  VARIANT;
 ALTER TABLE SOC_REPLAY_FRAME ADD COLUMN IF NOT EXISTS cells_player_p4  VARIANT;
+-- v1.53 forward-migration: SNAP's FX payload and its scorch-mark
+-- snapshot. Every Snowflake deploy since v1.36 has been dropping both
+-- on the floor. Re-deploy is enough to start keeping them; nights
+-- already archived cannot be recovered, because the payload was never
+-- written down.
+ALTER TABLE SOC_REPLAY_FRAME ADD COLUMN IF NOT EXISTS snap             VARIANT;
+ALTER TABLE SOC_REPLAY_FRAME ADD COLUMN IF NOT EXISTS snap_clouds      VARIANT;
 
 -- --------------------------------------------------------------------------
 -- 11) Agent invocations — Cortex agent audit trail (Phase 5)

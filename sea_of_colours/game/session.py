@@ -1448,7 +1448,11 @@ class GameSession:
     #: Shape: ``{stat: {attacker_seat: {victim_seat: count}}}``. Stats:
     #: ``probes_crushed`` (harvester rode over a probe), ``probes_superseded``
     #: (a newer probe destroyed an older one on the same cell), ``emp_probes``
-    #: (probe fried inside an EMP cloud), ``emp_harvesters`` (DISTINCT harvester
+    #: (probe fried inside an EMP cloud), ``snap_probes`` (probe shot off the
+    #: board by a SNAP — v1.50; split out for the same reason
+    #: ``snap_harvesters`` is, see below, and note that before the split these
+    #: landed in ``emp_probes`` and made agents that never bought an EMP look
+    #: like they had), ``emp_harvesters`` (DISTINCT harvester
     #: smothered by an EMP — counted once per unit per season),
     #: ``snap_harvesters`` (harvester crippled by a SNAP, whether caught on the
     #: square, walked onto it, or turned back from landing on it — v1.36; kept
@@ -3840,9 +3844,18 @@ class GameSession:
         100, a trace-40 ship scores 30, etc. Tweak the multipliers in
         one place to retune the economy.
 
-        Hoard contents explicitly do NOT count: a player who stockpiles
-        without shipping ends the season with unrealised value and a
-        zero scoreboard.
+        Hoard RED earns nothing by sitting there: a player who
+        stockpiles without shipping ends the season with unrealised
+        value, recovering only the season-end fire-sale (50% of raw
+        purity, no tier multiplier — :meth:`vault_red_loss_value`).
+
+        v1.51 — the hoard is NOT ignored, though this said so until the
+        BUG-12 audit. GREEN is charged wherever it sits, held or already
+        disposed into SHIPPED, and the fire-sale is credited at close;
+        both are inside :func:`compute_player_score`. The stale line
+        here ("hoard contents explicitly do NOT count") outlived the
+        v1.13 auto-disposal change and read as a licence to score off
+        SHIPPED alone, which is how the station readout came to.
         """
         # Delegate to the module-level scorer so the watcher's season
         # picker (which scores straight off the persisted SHIPPED /
@@ -8143,6 +8156,7 @@ class GameSession:
         *,
         owner: str,
         hour: int,
+        stat: str = "emp_probes",
     ) -> List[Dict[str, Any]]:
         """Destroy probes inside ``cells``.
 
@@ -8150,6 +8164,17 @@ class GameSession:
         Returns the destroyed-probe event payloads for the launch/tick
         replay frame. ``owner`` is the EMP's owner (for the event
         caption); ``hour`` is the resolve hour.
+
+        ``stat`` is the kill-feed row the destroyed probes are credited
+        to, and it exists because **the SNAP calls this too** (v1.50).
+        It used to credit ``emp_probes`` unconditionally, so a beacon
+        shot off the board by a SNAP was reported as an EMP kill — and
+        an agent that had never bought an EMP could finish a season
+        with "3 probes EMP'd" against it. That is the same mistake
+        ``snap_harvesters`` was split from ``harv_damaged`` to avoid
+        (§4.10): a shot asset must never read as something else's
+        casualty. Default stays ``emp_probes`` so the two EMP callers
+        are unchanged.
 
         v1.31 — used to neutralise caltrop mines in the blast too, and
         returned a ``(probes, mines)`` pair. Retired with the weapon.
@@ -8168,8 +8193,9 @@ class GameSession:
                     "owner": str(en.owner),
                     "at": [int(en.x), int(en.y)],
                 })
-                # v1.6 kill-feed: EMP owner fried this probe's house.
-                self._attrib("emp_probes", owner, en.owner)
+                # v1.6 kill-feed: the shooter fried this probe's house.
+                # v1.50 — which weapon did it is the caller's to say.
+                self._attrib(stat, owner, en.owner)
                 self._note_asset_destroyed(eid, reason=f"emp@hour{hour}")
                 self._clear_probe_launch_markers(eid, int(en.x), int(en.y))
                 del self.entities[eid]
@@ -8322,7 +8348,7 @@ class GameSession:
         self.record_snap_strike(str(player), tx, ty, hour=int(hour))
 
         destroyed_probes = self._emp_sweep_destroy(
-            cells, owner=str(player), hour=int(hour),
+            cells, owner=str(player), hour=int(hour), stat="snap_probes",
         )
         damaged = self._snap_damage_harvesters_at(
             cells, by=str(player), hour=int(hour),

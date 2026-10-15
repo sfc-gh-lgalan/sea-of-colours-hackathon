@@ -2059,14 +2059,61 @@ def get_endgame_summary(store: SocStore, session_id: str) -> Dict[str, Any]:
         # v1.6 kill-feed — attacker→victim matrices for this seat (as the
         # attacker), each row aligned to the fixed ``seats`` order so the
         # frontend can colour every number by the victim's seat colour.
+        # v1.52 (BUG-13) — weapons come from the engine's own firing
+        # ledger, not from re-reading replay frames. ``weapons_used`` is
+        # bumped in all three fire paths AFTER the stock drain (a refused
+        # fire never counts), and ``bought = stock + used`` is exact
+        # because both start at zero — the same reasoning
+        # ``league/stats.py`` already relies on. The frame-derived
+        # ``orbital_activity_by_day`` used below for probes/drops is a
+        # rebuild, and replay frames are exactly what a hard crash under
+        # the buffered store loses, so it must not be what a weapon count
+        # rests on.
+        w_used = sess.weapons_used.get(seat) or {}
+        w_stock = sess.weapon_stock.get(seat) or {}
+        kinds = list(sess.weapon_prices())
+        fired_by_kind = {k: int(w_used.get(k, 0) or 0) for k in kinds}
+        ordnance = {
+            k: {
+                "fired": fired_by_kind[k],
+                "bought": fired_by_kind[k] + int(w_stock.get(k, 0) or 0),
+            }
+            for k in kinds
+        }
+
+        # v1.52 (BUG-13) — repair the pre-v1.50 attribution at read time.
+        # Until v1.50 the SNAP's blast reused ``_emp_sweep_destroy`` and
+        # credited ``emp_probes`` unconditionally, so seasons played
+        # before it carry SNAP kills filed as EMP kills — 8 seats across
+        # the 44 on disk, every one of them a seat that fired a SNAP and
+        # never owned an EMP. The code is fixed; the played season cannot
+        # be. Only the UNAMBIGUOUS case is moved: the seat fired no EMP
+        # at all, so an EMP kill is impossible and a SNAP is the only
+        # thing that could have made it. A seat that fired both is left
+        # alone, because then the rows genuinely cannot be told apart.
+        attrib_seat: Dict[str, Dict[str, int]] = {}
+        for _stat, _by_atk in (sess.combat_attrib or {}).items():
+            attrib_seat[_stat] = dict((_by_atk or {}).get(seat, {}) or {})
+        if fired_by_kind.get("emp", 0) == 0 and fired_by_kind.get("snap", 0) > 0:
+            for _emp_stat, _snap_stat in (("emp_probes", "snap_probes"),
+                                          ("emp_harvesters", "snap_harvesters")):
+                _moved = attrib_seat.get(_emp_stat) or {}
+                if not _moved:
+                    continue
+                _dst = attrib_seat.setdefault(_snap_stat, {})
+                for _victim, _n in _moved.items():
+                    _dst[_victim] = int(_dst.get(_victim, 0) or 0) + int(_n or 0)
+                attrib_seat[_emp_stat] = {}
+
         def _kf_row(stat: str) -> List[int]:
-            row = (sess.combat_attrib.get(stat) or {}).get(seat, {})
+            row = attrib_seat.get(stat) or {}
             return [int(row.get(v, 0) or 0) for v in seats]
 
         killfeed = {
             "probes_crushed": _kf_row("probes_crushed"),
             "probes_superseded": _kf_row("probes_superseded"),
             "emp_probes": _kf_row("emp_probes"),
+            "snap_probes": _kf_row("snap_probes"),
             "emp_harvesters": _kf_row("emp_harvesters"),
             "snap_harvesters": _kf_row("snap_harvesters"),
             "chaff_jams": _kf_row("chaff_jams"),
@@ -2083,8 +2130,19 @@ def get_endgame_summary(store: SocStore, session_id: str) -> Dict[str, Any]:
             "red_harvested": red_harvested,
             "green_harvested": green_harvested,
             "blue_harvested": blue_harvested,
-            "emps_fired": int(at.get("emps", 0)),
-            "chaff_fired": int(at.get("chaff", 0)),
+            # v1.52 — off the ledger, and SNAP now has a key at all. It
+            # was counted (``tally_orbital_activity`` has bumped "snaps"
+            # since v1.38) and summed, and then read by nobody, so the
+            # weapon the room fires most was the only one the card could
+            # not show: 29 SNAPs fired across the 44 finished seasons,
+            # none of them printable.
+            "snaps_fired": fired_by_kind.get("snap", 0),
+            "emps_fired": fired_by_kind.get("emp", 0),
+            "chaff_fired": fired_by_kind.get("chaff", 0),
+            # Mines retired in v1.31, so there is no ledger to read and
+            # the frame tally is the only source left. Kept because
+            # ``tally_orbital_activity`` still walks ``mine_lay`` on
+            # purpose, so an ARCHIVED season goes on reporting them.
             "mines_laid": int(at.get("mines", 0)),
             "moves_cancelled": int(sess.moves_cancelled.get(seat, 0) or 0),
         }
@@ -2101,10 +2159,15 @@ def get_endgame_summary(store: SocStore, session_id: str) -> Dict[str, Any]:
             "harvesters_damaged": int(at.get("damaged", 0)),
             # Probes crushed / destroyed on the surface (asset-ledger derived).
             "probes_lost": int(probes_lost_by_seat.get(seat, 0)),
-            # Offensive interdiction fired this season.
-            "emps_fired": int(at.get("emps", 0)),
+            # Offensive interdiction fired this season. v1.52 — off the
+            # ledger, as above. NOTE this block looks dead from the web
+            # card (nothing in ``server/static/`` read it until v1.52)
+            # but ``league/stats.py`` reads ``harvesters_lost`` from it,
+            # so it must not be dropped as a duplicate of ``personal``.
+            "snaps_fired": fired_by_kind.get("snap", 0),
+            "emps_fired": fired_by_kind.get("emp", 0),
             "mines_laid": int(at.get("mines", 0)),
-            "chaff_fired": int(at.get("chaff", 0)),
+            "chaff_fired": fired_by_kind.get("chaff", 0),
         }
 
         players_out.append({
@@ -2131,6 +2194,13 @@ def get_endgame_summary(store: SocStore, session_id: str) -> Dict[str, Any]:
             "combat": combat,
             "killfeed": killfeed,
             "personal": personal,
+            # v1.52 (BUG-13) — fired AND bought, per kind, so the card can
+            # say what a weapon achieved rather than only that it existed.
+            # Without the pair, ordnance bought and never fired reads
+            # exactly like ordnance never bought: 41 of the 70 SNAPs
+            # bought across the finished seasons were never fired, and
+            # 62 of 88 seats ended holding something.
+            "ordnance": ordnance,
         })
 
         # Shipping manifest rows for this seat + per-day cumulative
