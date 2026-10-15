@@ -33,13 +33,28 @@ Cloning this repo directly is the one setup mistake that works
 perfectly right up until you publish.
 
 ```bash
-git clone https://github.com/<you>/sea-of-colours-hackathon.git
+git clone --depth 1 --filter=blob:none --no-checkout \
+  https://github.com/<you>/sea-of-colours-hackathon.git
 cd sea-of-colours-hackathon
+git sparse-checkout set --no-cone '/*' '!/server/static/films'
+git checkout
 git remote add upstream https://github.com/sfc-gh-lgalan/sea-of-colours-hackathon.git
 
 pip install -r requirements.txt
 python run_web.py
 ```
+
+That clone is **92MB and a few seconds** rather than 1.3GB and several
+minutes, because it skips the teaching films — 21 checked-in `.webm`
+files that no part of playing, forking or scoring needs. All three flags
+are doing separate work: `--depth 1` drops history, `--filter=blob:none`
+fetches file contents lazily, and the sparse pattern means the film
+blobs are never among the ones asked for. Omit any one of them and the
+films come back. A plain `git clone` still works if you would rather
+have everything.
+
+Want the films later — they drive teaching mode in the tutorial — run
+`git sparse-checkout disable` and they arrive.
 
 `upstream` is how you take kit fixes during the day (`git pull upstream
 main`); you never push to it. `python scripts/soc.py doctor` prints

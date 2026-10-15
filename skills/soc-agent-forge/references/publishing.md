@@ -27,10 +27,17 @@ Before anything else, and it is the step that goes wrong.
 
 ```bash
 # press Fork on GitHub FIRST, then:
-git clone https://github.com/<you>/sea-of-colours-hackathon.git
+git clone --depth 1 --filter=blob:none --no-checkout \
+  https://github.com/<you>/sea-of-colours-hackathon.git
 cd sea-of-colours-hackathon
+git sparse-checkout set --no-cone '/*' '!/server/static/films'
+git checkout
 git remote add upstream https://github.com/sfc-gh-lgalan/sea-of-colours-hackathon.git
 ```
+
+The sparse flags skip the checked-in teaching films: 92MB and seconds
+rather than 1.3GB and minutes. Nothing in minting, testing or publishing
+an agent reads them, and `git sparse-checkout disable` fetches them later.
 
 `origin` is theirs and the only place they push. `upstream` is where kit fixes
 come from and they never push to it. Nobody but the organiser has write access to

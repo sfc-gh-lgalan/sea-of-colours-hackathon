@@ -19,10 +19,18 @@ Before anything else. On GitHub, press **Fork** on the repo. Clone the
 copy that lands in your own account — not the original:
 
 ```bash
-git clone https://github.com/<you>/sea-of-colours-hackathon.git
+git clone --depth 1 --filter=blob:none --no-checkout \
+  https://github.com/<you>/sea-of-colours-hackathon.git
 cd sea-of-colours-hackathon
+git sparse-checkout set --no-cone '/*' '!/server/static/films'
+git checkout
 git remote add upstream https://github.com/sfc-gh-lgalan/sea-of-colours-hackathon.git
 ```
+
+Those flags leave out the teaching films — 21 checked-in `.webm` files
+nothing here needs — which is 92MB and seconds instead of 1.3GB and
+minutes. A plain `git clone` works too; `git sparse-checkout disable`
+fetches the films later if you want teaching mode.
 
 You work in your fork all day. `origin` is yours and is the only place
 you push; `upstream` is where kit fixes come from and you never push to

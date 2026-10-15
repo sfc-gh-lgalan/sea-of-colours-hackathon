@@ -693,9 +693,31 @@
           <div class="gd-term" data-repo-url="sfc-gh-lgalan/sea-of-colours-hackathon">
             <button class="gd-copy" type="button">[ COPY ]</button>
 <pre><span class="c"># replace &lt;you&gt; with your GitHub username</span>
-<span class="s">$</span> git clone https://github.com/&lt;you&gt;/sea-of-colours-hackathon.git
+<span class="s">$</span> git clone --depth 1 --filter=blob:none --no-checkout \
+    https://github.com/&lt;you&gt;/sea-of-colours-hackathon.git
 <span class="s">$</span> cd sea-of-colours-hackathon
+<span class="s">$</span> git sparse-checkout set --no-cone '/*' '!/server/static/films'
+<span class="s">$</span> git checkout
 <span class="s">$</span> git remote add upstream https://github.com/sfc-gh-lgalan/sea-of-colours-hackathon.git</pre>
+          </div>
+          <div class="gd-note gd-note--ok">
+            <b class="tag">92MB, not 1.3GB</b>
+            <p>
+              Those flags skip the teaching films &mdash; 21 checked-in
+              <code>.webm</code> files that nothing in playing, forking or
+              scoring needs. The clone takes seconds instead of minutes. All
+              three are doing separate work: <code>--depth 1</code> drops
+              history, <code>--filter=blob:none</code> fetches file contents
+              lazily, and the sparse pattern keeps the film blobs off the
+              list entirely &mdash; leave any one out and they come back.
+              A plain <code>git clone</code> still works if you would rather
+              have everything up front.
+            </p>
+            <p>
+              Want the films later? They drive <b>teaching mode</b> in the
+              tutorial. Run <code>git sparse-checkout disable</code> and they
+              arrive.
+            </p>
           </div>
           <div class="gd-note gd-note--info">
             <b class="tag">Access</b>
