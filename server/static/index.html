@@ -19,6 +19,26 @@
     <link rel="stylesheet" href="/static/station.css" />
   </head>
   <body>
+    <!-- v1.53 — boot curtain. Deliberately STATIC markup rather than built
+         by app.js, because a curtain the script creates is one the user has
+         already watched the game assemble behind: this has to be up for the
+         very first paint. app.js drops it immediately when the address has
+         no session to load, and otherwise lifts it into the boot animation
+         once the board and stations are ready. `?boot=0` skips the whole
+         sequence — see the note on BOOT_ENABLED in app.js. -->
+    <div id="cc-boot" class="cc-boot" role="status" aria-live="polite">
+      <div class="cc-boot-card">
+        <!-- Lowercase on purpose: Maratype is unicase, so this renders
+             as capitals, and it matches the landing page's wordmark
+             exactly rather than approximating it. -->
+        <div class="cc-boot-title">sea_of_colours<span
+          class="cc-boot-caret">_</span></div>
+        <div class="cc-boot-bar">
+          <div class="cc-boot-fill" id="cc-boot-fill"></div>
+        </div>
+        <div class="cc-boot-msg dim" id="cc-boot-msg">// booting</div>
+      </div>
+    </div>
     <div id="crt-viewport" class="crt-viewport cc-shell">
       <header class="cc-header">
         <div class="cc-header-left">

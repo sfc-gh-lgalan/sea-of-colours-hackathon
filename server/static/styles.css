@@ -1364,6 +1364,13 @@ body {
   --opa-stale: 0.72;
   --opa-echo: 0.58;
   --opa-fog: 0.24;
+  /* v1.53 — the OBS board's own three steps. Separate from the four
+   * above because those are terrain alphas inside a seat's view and
+   * these dim the WHOLE cell, entities and all, to say how much of the
+   * board the Houses can account for between them. Echo sits well below
+   * live so the vision outlines read as enclosing something. */
+  --opa-obs-echo: 0.46;
+  --opa-obs-fog: 0.18;
   /* v1.19 — the fog block's own paint, hoisted to a var because the
    * probe-drop mask has to stand in for a fog cell exactly (see
    * `.cell--probe-pending`). Two copies of this colour is how that mask
@@ -1399,11 +1406,58 @@ body {
   opacity: 0.8;
 }
 
-/* OBS view: cells outside any player's vision are dimmed */
-.map-host > .map-grid .row .cell[data-obs-dim] {
-  opacity: 0.18;
+/* OBS view: how much of the board the HOUSES can account for.
+ *
+ * v1.53 — three steps, where this used to be a single 0.18 for "no seat
+ * has this as fog". That test passed for remembered ground as well as
+ * live, so an echo painted identically to a square under a probe and
+ * the observer's board read as almost fully lit — see the note on
+ * `paintObsVisionMap`. Full brightness is now reserved for ground some
+ * House can see RIGHT NOW, which is what makes the vision outlines
+ * drawn over the top mean anything.
+ *
+ * The fog step keeps its old 0.18 rather than moving to `--opa-fog`:
+ * never-seen ground looked right, it was the other two that were
+ * conflated, and a whole-cell dim in OBS is a different job from the
+ * per-cell terrain alphas a seat view uses. */
+.map-host > .map-grid .row .cell[data-obs-dim="echo"] {
+  opacity: var(--opa-obs-echo);
 }
-.map-host > .map-grid .row .cell[data-obs-dim]:hover {
+.map-host > .map-grid .row .cell[data-obs-dim="fog"] {
+  opacity: var(--opa-obs-fog);
+}
+/* v1.53 — a cell whose dim is being HELD until the unit that lights it
+ * arrives (`collectObsRelitCells`). The transition is the whole point:
+ * the reveal wavefront takes `data-obs-dim` off ring by ring, and this
+ * is what turns that into a disc coming up from dim to lit rather than
+ * 49 cells snapping on. Paired with the seat view's fog-block fade,
+ * which runs 240ms — close enough that a cut between the two views
+ * mid-pop does not change the tempo. */
+.map-host > .map-grid .row .cell[data-obs-held] {
+  transition: opacity 260ms ease-out;
+}
+
+/* Ground nobody has ever seen cannot be showing you who is standing on
+ * it. The seat view gets this free — its mask is an opaque fog block —
+ * but the observer's hold is only a dim, so the probe that is still in
+ * the air was drawn faintly at its destination a beat before it
+ * arrived, along with anything else the disc was about to uncover.
+ * Only the `fog` step: a remembered cell was already showing its stale
+ * occupant, and blanking that for a quarter second would be a flicker
+ * rather than a fix. */
+.map-host > .map-grid .row .cell[data-obs-held][data-obs-dim="fog"]
+  .entity-overlay,
+.map-host > .map-grid .row .cell[data-obs-held][data-obs-dim="fog"]
+  .trail-overlay {
+  opacity: 0;
+}
+
+/* Hovering lifts either step enough to read, without reaching the
+ * brightness that means "a House can see this". */
+.map-host > .map-grid .row .cell[data-obs-dim="echo"]:hover {
+  opacity: 0.8;
+}
+.map-host > .map-grid .row .cell[data-obs-dim="fog"]:hover {
   opacity: 0.5;
 }
 
@@ -8385,27 +8439,55 @@ button.solo-queue-mini:disabled {
   opacity: 0;
 }
 
-/* Probe landing ripple — expanding ring, position:fixed so it survives map repaints */
+/* Probe landing ripple — expanding ring, position:fixed so it survives map
+ * repaints.
+ *
+ * v1.53 — it was not a ring, and on a dark board that mattered. The
+ * element is 0x0 and the animation grew a box-shadow SPREAD, which does
+ * not outline anything: a shadow fills outward from the border box, so
+ * 55px of spread on a zero-size box is a solid 110px block. Worse,
+ * `border-radius: 50%` is a percentage of that same zero box, so the
+ * block was not even round — the landing beat was a hard-edged
+ * seat-coloured SQUARE sitting over the map for half a second, which in
+ * the observer view (where it lands on dim ground) read as the probe's
+ * disc opening early, ahead of the probe.
+ *
+ * A real ring needs a real box, so the size is what animates now and
+ * the colour lives on the border. `redsign-burst` below already grows
+ * width/height for the same reason; it is one fixed-position element
+ * with no siblings to reflow. The soft outer glow stays a shadow,
+ * because there it IS a glow and filling is the point. */
 .probe-ripple {
   position: fixed;
   pointer-events: none;
   border-radius: 50%;
+  box-sizing: border-box;
   width: 0;
   height: 0;
   transform: translate(-50%, -50%);
   z-index: 30;
   /* --rr/--rg/--rb set from JS to match the player's seat color */
   --rr: 255; --rg: 255; --rb: 255;
+  border: 2px solid rgba(var(--rr), var(--rg), var(--rb), 0);
   animation: probe-ripple-expand 620ms cubic-bezier(0.1, 0.65, 0.35, 1) forwards;
 }
 
 @keyframes probe-ripple-expand {
-  0%   { box-shadow: 0 0 0 2px  rgba(var(--rr), var(--rg), var(--rb), 0.70),
-                     0 0 6px 4px rgba(var(--rr), var(--rg), var(--rb), 0.25); }
-  60%  { box-shadow: 0 0 0 55px  rgba(var(--rr), var(--rg), var(--rb), 0.14),
-                     0 0 12px 58px rgba(var(--rr), var(--rg), var(--rb), 0.06); }
-  100% { box-shadow: 0 0 0 80px rgba(var(--rr), var(--rg), var(--rb), 0),
-                     0 0 0  80px rgba(var(--rr), var(--rg), var(--rb), 0); }
+  0% {
+    width: 6px; height: 6px;
+    border-color: rgba(var(--rr), var(--rg), var(--rb), 0.75);
+    box-shadow: 0 0 6px 1px rgba(var(--rr), var(--rg), var(--rb), 0.25);
+  }
+  60% {
+    width: 78px; height: 78px;
+    border-color: rgba(var(--rr), var(--rg), var(--rb), 0.30);
+    box-shadow: 0 0 10px 1px rgba(var(--rr), var(--rg), var(--rb), 0.08);
+  }
+  100% {
+    width: 112px; height: 112px;
+    border-color: rgba(var(--rr), var(--rg), var(--rb), 0);
+    box-shadow: 0 0 10px 1px rgba(var(--rr), var(--rg), var(--rb), 0);
+  }
 }
 
 /* ── Redsign discovery burst ───────────────────────────────────────────
@@ -11161,4 +11243,165 @@ body.cc-lab-sealed #cc-panel-orders::before {
   font-size: 8.5px;
   letter-spacing: 0.1em;
   opacity: 0.75;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * v1.53 — BOOT SEQUENCE
+ *
+ * Three beats, in order: a black curtain with a loading bar while the
+ * session fetches, the fog spreading out from the middle of the board,
+ * then the stations teleporting in (that last one lives in station.css,
+ * because the hull it animates is built there).
+ *
+ * The curtain exists because the alternative is watching the game
+ * assemble: placeholders, then a grid, then stations popping in as
+ * their payloads land. Holding black until everything is ready costs
+ * nothing — the fetches take the same time either way — and buys the
+ * reveal somewhere to happen.
+ * ════════════════════════════════════════════════════════════════ */
+
+/* The wordmark face, and the only place this stylesheet uses it.
+ *
+ * Declared again rather than shared: `landing.css` has its own copy and
+ * the two pages never load each other's sheet. MARATYPE — Artyom
+ * Galinov (metamorphosiis), freely redistributable; see
+ * fonts/Maratype.LICENCE.txt. It is UNICASE — lowercase maps to the
+ * capital glyphs — so it is display text only, never body copy.
+ *
+ * `block` rather than `swap`, unlike the landing page: this is on
+ * screen for two seconds and then gone, so a swap would land in the
+ * middle of the only frames anyone sees. The file is same-origin and
+ * small, and the landing page has usually cached it already. */
+@font-face {
+  font-family: "Maratype";
+  src: url("/static/fonts/Maratype.otf") format("opentype");
+  font-weight: 400;
+  font-display: block;
+}
+
+.cc-boot {
+  position: fixed;
+  inset: 0;
+  /* Above every other overlay in the game, by a wide margin and on
+     purpose. The highest anything else reaches is 12000 (the results
+     reopen pill, which was showing through an earlier 10000 here) and
+     10050 (the catapult tooltip). One layer poking through a curtain
+     whose entire job is that nothing is seen before it lifts is the
+     whole feature failing, so leave the headroom. */
+  z-index: 100000;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+}
+.cc-boot[hidden] { display: none !important; }
+
+/* Lifting is a fade on the curtain alone, not a transition on the game
+   behind it — the board is already painted and mid-animation by then. */
+.cc-boot--out {
+  animation: cc-boot-out 480ms ease-out both;
+  pointer-events: none;
+}
+@keyframes cc-boot-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Sized by the wordmark rather than by a number. The title is
+   `nowrap`, so `max-content` is exactly its width — which means the
+   loading bar underneath is exactly as wide as the letters at every
+   viewport, instead of being a fixed rule the wordmark grows in and
+   out of as the clamp moves. */
+.cc-boot-card {
+  width: max-content;
+  max-width: 88vw;
+  text-align: center;
+}
+
+.cc-boot-title {
+  font-family: "Maratype", var(--mono);
+  font-weight: 400;
+  /* Maratype is ultra-condensed and wants a size that would be absurd
+     in anything else — the landing page runs it at up to 14rem. Clamped
+     against the viewport because the wordmark is one unbreakable line. */
+  font-size: clamp(2.6rem, 9vw, 5.6rem);
+  line-height: 0.9;
+  letter-spacing: 0.005em;
+  /* No-op for Maratype, which is unicase. It is here for the frame
+     where the face has not arrived: without it the fallback renders a
+     huge lowercase `sea_of_colours` in JetBrains Mono. */
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--green, #4afc6e);
+  /* Clears the descenders. Maratype's underscore — and this wordmark
+     has three of them — hangs well below the 0.9 line box, so a gap
+     measured off the box alone puts the bar through the letters. */
+  margin-bottom: 34px;
+}
+
+/* Same trailing caret the landing page's wordmark carries, and it earns
+   its place better here: on a loading screen a blinking cursor is the
+   thing that says the page is alive rather than stuck. */
+.cc-boot-title .cc-boot-caret {
+  animation: cc-boot-blink 1.05s steps(1) infinite;
+}
+@keyframes cc-boot-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.cc-boot-bar {
+  height: 3px;
+  background: rgba(74, 252, 110, 0.14);
+  overflow: hidden;
+}
+
+.cc-boot-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--green, #4afc6e);
+  /* Eased because the real stages land in lumps — status returns almost
+     at once and the replay payload can take seconds, so an untweened bar
+     jumps and then sits. */
+  transition: width 320ms ease-out;
+}
+
+.cc-boot-msg {
+  margin-top: 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  min-height: 1.2em;
+}
+
+/* ── the fog spreading out from the middle ───────────────────────────
+ * Every cell animates the same way; what makes it a wave is the
+ * per-cell `animation-delay` app.js writes inline, off the cell's
+ * distance from the board's centre plus a little noise.
+ *
+ * Delay rather than ~1120 timers: the grid arrives as one innerHTML
+ * assignment, so the cheapest correct thing is to let the compositor
+ * schedule it. Same reasoning as the EMP ring's Manhattan delay. */
+.cell--boot {
+  animation: cc-boot-cell 420ms ease-out both;
+}
+/* `filter: opacity()` rather than `opacity`, and that is not a detail.
+   A cell carries its own opacity to say what it is — `--opa-obs-echo`
+   or `--opa-obs-fog` in the OBS view, `--opa-stale` for a memory,
+   `--opa-fog` under fog — and an animated `opacity: 1` beats all of
+   them. The board
+   came up uniformly bright and then visibly dropped a third of its
+   cells the moment this class was removed. A filter MULTIPLIES, so each
+   cell fades in to whatever it was always going to be. */
+@keyframes cc-boot-cell {
+  0%   { filter: opacity(0); transform: scale(0.35); }
+  55%  { filter: opacity(1); }
+  100% { filter: opacity(1); transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-boot-fill { transition: none; }
+  .cc-boot--out { animation: none; opacity: 0; }
+  .cell--boot   { animation: none; }
+  .cc-boot-title .cc-boot-caret { animation: none; }
 }

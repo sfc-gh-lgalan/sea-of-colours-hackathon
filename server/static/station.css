@@ -115,7 +115,62 @@ body.os-active .cc-map-viewport { overflow: auto !important; }
   letter-spacing: 0;
   display: block;
   overflow: visible;
-  /* color set inline per station via --os-color */
+  /* v1.53 — was an inline `color` written by _osBuildStation. Moved onto
+     the variable so the boot teleport can animate individual hull spans
+     towards the seat colour; an inline colour on the parent would have
+     been the thing each span was fighting. */
+  color: var(--os-color);
+}
+
+/* ── v1.53 — boot teleport ─────────────────────────────────────────
+ *
+ * A station arrives rather than appearing: each hull pixel climbs the
+ * ░ ▒ ▓ █ density ramp in hot red as a wave sweeps up the diamond, then
+ * cools to the seat colour. station.js drives the glyphs (CSS cannot
+ * animate text); everything here is the staging around that.
+ */
+
+/* Built, laid out, and not there yet. `visibility` rather than `display`
+   so the element still takes its slot — the side columns must not reflow
+   when four stations turn up a fifth of a second apart.
+
+   Applies to the catapult rails as well as the platforms. They are the
+   same furniture as far as a player is concerned, and leaving them up
+   while the stations were still arriving read as two empty grids
+   floating beside an otherwise finished board. */
+.os-preboot { visibility: hidden; }
+
+/* Mid-teleport: the hull is materialising, so everything bolted to it
+   waits. These snap in when `--boot` comes off rather than fading,
+   which is both the right look for a terminal and avoids fighting the
+   default opacities some of them carry. */
+.os-station--boot .os-diamond-tag,
+.os-station--boot .os-diamond-kind,
+.os-station--boot .os-vault-pre,
+.os-station--boot .os-arms,
+.os-station--boot .os-score,
+.os-station--boot .os-score-delta { visibility: hidden; }
+
+/* Hold the idle bob until the station is solid — a hull drifting up and
+   down while it is still assembling reads as a glitch. Removing the
+   class restarts os-float on the seat's own negative delay. */
+.os-station--boot .os-diamond-wrap { animation: none; }
+
+.os-hull-px {
+  /* The cool-down. station.js only adds and removes `--warm`; this
+     carries the colour the rest of the way, to whatever the seat's
+     `--os-color` happens to be. Keep in step with OS_BOOT_COOL_MS. */
+  transition: color 460ms linear, text-shadow 460ms linear;
+}
+
+.os-hull-px--warm {
+  color: #ff2f2f;
+  text-shadow: 0 0 7px rgba(255, 47, 47, 0.75);
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-hull-px { transition: none; }
 }
 
 /* ── vault overlay pre ───────────────────────────────────────────── */

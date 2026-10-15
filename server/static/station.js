@@ -158,6 +158,16 @@
 
   let _initialized   = false;
   let _activeSeats   = [];
+  // v1.53 — boot teleport. Declared up here with the rest of the state
+  // rather than beside the code that uses it, because the arming call
+  // lives in the public-hooks block near the top of the file: a `let`
+  // further down puts it in the temporal dead zone at that point, and
+  // the `try` around the arming swallowed the ReferenceError whole. The
+  // stations then simply never hid, with nothing logged anywhere.
+  let _osBootPending = false;  // armed by app.js, cleared when it runs
+  let _osBootRan     = false;  // one teleport per page
+  /** @type {number | null} */
+  let _osBootFailsafe = null;  // dead-man's switch; see _osBootArm
   let _stationObs    = {};    // seat → latest obs snapshot
   let _catData       = null;  // latest RED catapult.slot_assignments array
   let _greenData     = null;  // latest GREEN jettison.slot_assignments array
@@ -232,6 +242,36 @@
   }
 
   /* ── public hooks ─────────────────────────────────────────────────── */
+
+  /* v1.53 — arming the boot teleport is a FLAG app.js sets, not a hook it
+   * calls, and that is forced by load order: this file is loaded after
+   * app.js, and app.js arms the curtain inside its own boot IIFE — which
+   * runs before a single `osOn*` defined here exists. A hook would simply
+   * never fire. Firing the teleport is a hook, because by then everything
+   * is loaded. */
+  try {
+    if (window.__SOC_BOOT_PENDING__ === true) _osBootArm();
+  } catch (_e) { /* no boot — stations just appear, as they always did */ }
+
+  /** Arm for a boot that starts AFTER this file loaded — NEW GAME from
+   *  the idle landing screen, where the flag above was already read as
+   *  false. The stations exist by then, so this marks them directly. */
+  window.osOnBootArm = function () {
+    _osBootArm();
+    _osMarkPreboot();
+  };
+
+  /** Cue the teleport, `afterMs` from now. app.js calls this as the fog
+   *  wave crosses the board, so the stations land into a settled map. */
+  window.osOnBootTeleport = function (afterMs) {
+    _osRunBootTeleport(afterMs);
+  };
+
+  /** No teleport after all — show the stations as they are. Called when
+   *  app.js abandons the boot (a failed load, a seat picker, boot off). */
+  window.osOnBootCancel = function () {
+    if (!_osBootRan) _osBootAbort();
+  };
 
   window.osOnOrbitalDataLoaded = function () {
     _viewerSeat = window._socReplayViewSeat || null;
@@ -401,6 +441,7 @@
       _osGreenCatLaunchAnim();
       _osUpdateScoresForDay(day, true);
       _osConsumeShipDeltas();
+      _osShowGreenCharge(day);
       _osBlueConsumeAll();
       for (const [s, o] of Object.entries(_postObs)) _stationObs[s] = o;
       _osRefreshAllVaults();
@@ -560,8 +601,9 @@
         const _fireT = setTimeout(() => {
           _osCatLaunchAnim();
           _osGreenCatLaunchAnim();
-          _osUpdateScoresForDay(day, true);   // fold shipped-only "+X"
+          _osUpdateScoresForDay(day, true);   // fold the night's RED, less its GREEN
           _osConsumeShipDeltas();
+          _osShowGreenCharge(day);
           _osBlueConsumeAll();
           for (const [s, o] of Object.entries(_postObs)) _stationObs[s] = o;
           _osRefreshAllVaults();
@@ -751,6 +793,7 @@
         _osGreenCatLaunchAnim();
         _osUpdateScoresForDay(day, true);
         _osConsumeShipDeltas();
+        _osShowGreenCharge(day);
         _osBlueConsumeAll();
         window._osPendingDwellMs = OS_DWELL_OPEN;
       } else if (!forward) {
@@ -1015,6 +1058,10 @@
       _osUpdateLeader();
     }
 
+    // v1.53 — the stations were just (re)built, so anything the boot
+    // sequence marked on the old DOM is gone. Put the hold back.
+    if (_osBootPending) _osMarkPreboot();
+
     _osBindHover();
   }
 
@@ -1048,7 +1095,7 @@
 
     div.innerHTML = `
 <div class="os-diamond-wrap">
-  <pre class="os-diamond" data-os-diamond="${seat}" style="color:${color}"></pre>
+  <pre class="os-diamond" data-os-diamond="${seat}"></pre>
   <pre class="os-vault-pre" data-os-vault="${seat}"></pre>
   <span class="os-diamond-tag">${tag}</span>
   ${kind
@@ -1073,6 +1120,18 @@
   /* ── diamond / vault rendering ────────────────────────────────────── */
 
   // Diamond body: player-colored shape, vault region left as spaces (the hole).
+  //
+  // v1.53 — each hull block is its own `<span>` rather than a character in
+  // one long string, so the boot teleport can address them individually
+  // (ramp a single pixel up the `OS_DENSITY` scale, tint it, settle it).
+  // The vault overlay beside this has always rendered per-span for the
+  // same reason, so this is the hull catching up rather than a new idea.
+  //
+  // The 9x9 character grid is load-bearing and must survive the change:
+  // `_osVaultAnchor`, `_osBlueStageOne` and `_osQueueAnim` all derive a
+  // cell size as `wrapWidth / OS_DIA_SIZE` and position sprites off it.
+  // Plain inline spans inside a `white-space: pre` block do not affect
+  // metrics, and the gaps stay as bare spaces, so the grid is unchanged.
   function _osRebuildDiamond(el, mirror) {
     const SIZE = OS_DIA_SIZE, HALF = OS_DIA_HALF;
     let html = "";
@@ -1085,11 +1144,260 @@
         const inVault   = r < OS_VAULT_ROWS && (mirror
           ? c >= SIZE - OS_VAULT_COLS
           : c < OS_VAULT_COLS);
-        html += (!inVault && inDiamond) ? "█" : " ";
+        html += (!inVault && inDiamond)
+          ? `<span class="os-hull-px" data-r="${r}" data-c="${c}">█</span>`
+          : " ";
       }
       if (r < SIZE - 1) html += "\n";
     }
     el.innerHTML = html;
+  }
+
+  /* ── v1.53 — the boot teleport ──────────────────────────────────────
+   *
+   * Stations do not appear, they arrive. Each hull pixel starts as
+   * nothing, then climbs the density ramp — ░ ▒ ▓ █ — in hot red as a
+   * wave sweeps up the diamond, and cools to the seat colour once it is
+   * solid. Same four glyphs the vault readout uses, so the effect is
+   * built out of the station's own alphabet rather than a new one.
+   *
+   * The glyph has to change, and CSS cannot animate text, so the ramp is
+   * a single rAF loop over every pixel of every station. The cool-down
+   * is left to CSS: dropping the `--warm` class lets a transition carry
+   * the colour back to the inherited `var(--os-color)`, which works for
+   * any colour format a player profile might hand us and needs no RGB
+   * arithmetic here.
+   */
+
+  /** Blank → █ for one pixel. */
+  const OS_BOOT_RAMP_MS   = 400;
+  /** Bottom row of a diamond to its top row. */
+  const OS_BOOT_SWEEP_MS  = 540;
+  /** Per-pixel slop, so the front is a wave and not a shutter. */
+  const OS_BOOT_JITTER_MS = 140;
+  /** How far into one platform's arrival the NEXT one starts, as a
+   *  share of that arrival's own length.
+   *
+   *  A share rather than a flat delay, because the two numbers have to
+   *  move together: this was 210ms against a run of a little over a
+   *  second — a 20% offset, which at a glance was every station
+   *  arriving at once. At 0.34 the first platform is finishing while
+   *  the one behind it is roughly 40% materialised, so the relay reads
+   *  as a sequence without any of them waiting their turn. Retuning
+   *  the sweep now carries the stagger with it instead of quietly
+   *  collapsing it.
+   *
+   *  The share is tuned against a MEASUREMENT, not arithmetic, and the
+   *  two disagree by a lot. `runMs` below is the envelope — the last
+   *  pixel's worst-case front plus its ramp — but the diamond's rows
+   *  bunch the front times well inside it, so a hull is actually done
+   *  in about 700ms rather than the ~1080 the dials add up to. Spacing
+   *  off the arithmetic put the trailing platform at 16% when the
+   *  leader landed, which looks like queueing.
+   *  `backstage/probes/_probe_boot_animation.py` prints the fill curve
+   *  — re-read it before touching this. */
+  const OS_BOOT_SEAT_SHARE = 0.36;
+  /** Per-seat slop on that gap, as a share of it. The arrivals are
+   *  meant to be uneven, not metronomic. Kept well under 1 so the
+   *  order never scrambles. */
+  const OS_BOOT_SEAT_VARY  = 0.45;
+  /** Ceiling on the whole relay, as a share of one platform's run:
+   *  every platform must have STARTED arriving before the first one
+   *  finishes. That is the difference between a relay and a queue —
+   *  with four seats and an uncapped gap the last two had not begun
+   *  when the leader landed, so the side column filled in one corner
+   *  at a time instead of the whole rank coming in together.
+   *
+   *  Expressed against the same envelope as the share above, and for
+   *  the same reason: a hull is really done in about 0.65 of it, so
+   *  spending 0.6 on the relay puts the last platform's first pixel
+   *  just before the leader's last one. */
+  const OS_BOOT_INFLIGHT   = 0.6;
+  /** Red → seat colour. Must match the `.os-hull-px` transition. */
+  const OS_BOOT_COOL_MS   = 460;
+
+  function _osReduceMotion() {
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_e) { return false; }
+  }
+
+  /** Hold every station off-screen until its pixels are due.
+   *
+   *  Re-applied from `_osInitPanels` rather than set once, because that
+   *  function runs TWICE on a normal load — `osOnLivePlayers` builds the
+   *  turn-1 skeleton and `osOnOrbitalDataLoaded` rebuilds it once the
+   *  replay payload lands — and the second pass throws away the first
+   *  pass's DOM along with anything marked on it. */
+  function _osMarkPreboot() {
+    for (const el of document.querySelectorAll(".os-station, .os-catapult")) {
+      el.classList.add("os-preboot");
+    }
+  }
+
+  /** Give up on the animation and just show the stations.
+   *
+   *  Every failure path lands here: boot switched off, reduced motion, a
+   *  load that errored before the teleport was cued, or the failsafe.
+   *  A station that never arrives is much worse than one that does not
+   *  animate. */
+  function _osBootAbort() {
+    _osBootRan = true;
+    _osBootPending = false;
+    if (_osBootFailsafe !== null) {
+      clearTimeout(_osBootFailsafe);
+      _osBootFailsafe = null;
+    }
+    for (const el of document.querySelectorAll(".os-preboot")) {
+      el.classList.remove("os-preboot");
+    }
+    for (const el of document.querySelectorAll(".os-station--boot")) {
+      el.classList.remove("os-station--boot");
+    }
+    for (const px of document.querySelectorAll(".os-hull-px")) {
+      px.textContent = "█";
+      px.classList.remove("os-hull-px--warm");
+    }
+  }
+
+  /** Arm (or re-arm) the hold, and set the dead-man's switch.
+   *
+   *  The failsafe is independent of app.js's own, because it answers a
+   *  different question — "app.js armed me and then never came back" —
+   *  which a curtain timer cannot cover: a curtain can lift perfectly
+   *  well while the stations underneath stay hidden forever. */
+  function _osBootArm() {
+    _osBootPending = true;
+    _osBootRan = false;
+    if (_osBootFailsafe !== null) clearTimeout(_osBootFailsafe);
+    _osBootFailsafe = window.setTimeout(() => {
+      _osBootFailsafe = null;
+      if (!_osBootRan) _osBootAbort();
+    }, 30000);
+  }
+
+  function _osRunBootTeleport(afterMs) {
+    if (_osBootRan) return;
+    if (_osReduceMotion() || !(Number(afterMs) > 0)) { _osBootAbort(); return; }
+
+    const stations = _activeSeats
+      .map((seat) => document.querySelector(`[data-os-station="${seat}"]`))
+      .filter(Boolean);
+    if (!stations.length) { _osBootAbort(); return; }
+
+    _osBootRan = true;
+    _osBootPending = false;
+    if (_osBootFailsafe !== null) {
+      clearTimeout(_osBootFailsafe);
+      _osBootFailsafe = null;
+    }
+
+    const start = performance.now() + Number(afterMs);
+    const SPAN = OS_DIA_SIZE - 1;
+    const rigs = [];
+
+    // One platform's arrival, end to end: the front crossing the hull,
+    // the slop on the last pixel to be caught, and that pixel's own
+    // ramp to solid. The relay is spaced against this rather than
+    // against a number typed beside it.
+    const runMs = OS_BOOT_SWEEP_MS + OS_BOOT_JITTER_MS + OS_BOOT_RAMP_MS;
+    const gaps = Math.max(1, stations.length - 1);
+    const seatGap = Math.min(
+      runMs * OS_BOOT_SEAT_SHARE, (runMs * OS_BOOT_INFLIGHT) / gaps,
+    );
+    // Accumulated, so the slop wanders the rhythm rather than being
+    // cancelled out each step the way an independent per-seat offset
+    // would be.
+    let seatAt = 0;
+
+    stations.forEach((stEl, i) => {
+      if (i > 0) {
+        seatAt += seatGap * (1 + (Math.random() - 0.5) * OS_BOOT_SEAT_VARY);
+      }
+      const pixels = [];
+      for (const px of stEl.querySelectorAll(".os-hull-px")) {
+        const r = Number(px.getAttribute("data-r"));
+        const c = Number(px.getAttribute("data-c"));
+        // Bottom to top, leaning slightly across the columns. A pure row
+        // sweep reads as a shutter coming up; the lean plus the jitter
+        // below is what makes it a front moving through the shape.
+        const up   = (SPAN - r) / SPAN;
+        const lean = (c / SPAN) * 0.24;
+        const at = start
+          + seatAt
+          + ((up + lean) / 1.24) * OS_BOOT_SWEEP_MS
+          + Math.random() * OS_BOOT_JITTER_MS;
+        px.textContent = " ";
+        pixels.push({ px, at, warm: false, done: false });
+      }
+      // Safe to unhide now: every pixel is a space and the furniture is
+      // held back by `--boot`, so the station occupies its layout slot
+      // while showing nothing.
+      stEl.classList.remove("os-preboot");
+      stEl.classList.add("os-station--boot");
+      rigs.push({ el: stEl, pixels, settling: false });
+    });
+
+    /** The catapult rails have nothing to materialise — they are
+     *  scaffold, not a hull — so they simply turn up alongside the first
+     *  platform that finishes. Hung off that rather than its own timer:
+     *  a timer has to guess the length of the teleport, and a guess that
+     *  drifts leaves the rails arriving visibly after the stations they
+     *  belong to. */
+    let railsShown = false;
+    const showRails = () => {
+      if (railsShown) return;
+      railsShown = true;
+      for (const el of document.querySelectorAll(".os-catapult.os-preboot")) {
+        el.classList.remove("os-preboot");
+      }
+    };
+
+    const tick = () => {
+      const now = performance.now();
+      let pendingRigs = 0;
+      for (const rig of rigs) {
+        let landed = 0;
+        for (const p of rig.pixels) {
+          if (p.done) { landed++; continue; }
+          const dt = now - p.at;
+          if (dt < 0) continue;
+          if (dt >= OS_BOOT_RAMP_MS) {
+            p.px.textContent = "█";
+            // Dropping `--warm` hands the colour to the CSS transition,
+            // which walks it back to the inherited seat colour.
+            p.px.classList.remove("os-hull-px--warm");
+            p.done = true;
+            landed++;
+            continue;
+          }
+          if (!p.warm) { p.px.classList.add("os-hull-px--warm"); p.warm = true; }
+          const idx = Math.min(
+            OS_DENSITY.length - 1,
+            Math.floor((dt / OS_BOOT_RAMP_MS) * OS_DENSITY.length),
+          );
+          const ch = OS_DENSITY[idx];
+          if (p.px.textContent !== ch) p.px.textContent = ch;
+        }
+        if (landed < rig.pixels.length) { pendingRigs++; continue; }
+        if (!rig.settling) {
+          rig.settling = true;
+          // Per station, not once at the end: a seat whose hull is solid
+          // has arrived, and should get its tag, vault and bob back
+          // without waiting on the seat that started 600ms after it.
+          window.setTimeout(() => {
+            rig.el.classList.remove("os-station--boot");
+            showRails();
+          }, OS_BOOT_COOL_MS);
+        }
+      }
+      if (pendingRigs) { requestAnimationFrame(tick); return; }
+      // Belt and braces: a rig with no pixels at all would never reach
+      // the settle branch above, and the rails must not be the thing
+      // left behind by an edge case.
+      showRails();
+    };
+    requestAnimationFrame(tick);
   }
 
   // Vault overlay pre: renders only the vault chars, positioned atop the diamond.
@@ -1800,12 +2108,22 @@
 
   // At DUSK show each seat the score it's ABOUT to gain when the catapult
   // fires (through-N minus through-(N-1)) as a "+X" badge under the readout.
+  //
+  // v1.51 (BUG-12) — the cumulative sum is now NET of that orbit's GREEN
+  // charge, so the raw difference would quietly net the two off and a night
+  // that shipped 400 RED while dumping four GREEN would advertise "+0".
+  // Add the charge back so this badge stays what it says it is — the RED
+  // coming in — and let ``_osShowGreenCharge`` bill the green on its own
+  // line, the same way the season-closing fold separates them.
   function _osShowShipDeltas(day) {
     if (typeof window._osGetCumulativeScore !== "function") return;
     const prev = window._osGetCumulativeScore(day - 1) || {};
     const cur  = window._osGetCumulativeScore(day) || {};
+    const green = (typeof window._osGetDayGreenPenalty === "function")
+      ? (window._osGetDayGreenPenalty(day) || {}) : {};
     for (const seat of _activeSeats) {
-      const delta = (Number(cur[seat]) || 0) - (Number(prev[seat]) || 0);
+      const delta = (Number(cur[seat]) || 0) - (Number(prev[seat]) || 0)
+        + (Number(green[seat]) || 0);
       const el = document.querySelector(`[data-os-score-delta="${seat}"]`);
       if (!el) continue;
       if (delta > 0) {
@@ -1867,6 +2185,23 @@
     requestAnimationFrame(() => line.classList.add("os-settle-line--in"));
   }
 
+  // v1.51 (BUG-12) — bill this night's GREEN on its own line, at the launch
+  // that charged it. Reuses the season-closing fold's line so a nightly
+  // charge and a final one read identically; the stack is wiped by the next
+  // non-resolve tick (see ``_osClearSettleStacks``), which gives the line
+  // the launch dwell and no longer.
+  //
+  // This is the ``-100`` a player could never see: the charge landed in the
+  // score every orbit and nothing on the platform ever named it.
+  function _osShowGreenCharge(day) {
+    if (typeof window._osGetDayGreenPenalty !== "function") return;
+    const green = window._osGetDayGreenPenalty(day) || {};
+    for (const seat of _activeSeats) {
+      const n = Number(green[seat]) || 0;
+      if (n > 0) _osPushSettleLine(seat, `-${n.toLocaleString()} green`, "green");
+    }
+  }
+
   // True when the loaded season carries a settlement breakdown with any
   // non-zero green penalty or vault-red fire-sale to animate.
   function _osHasSettlement() {
@@ -1886,7 +2221,12 @@
   function _osPlaySettlement(startDelayMs) {
     const settle = (typeof window._osGetSettlement === "function")
       ? (window._osGetSettlement() || {}) : {};
-    _osClearSettleStacks();
+    // v1.51 (BUG-12) — deliberately NOT clearing the stack here any more.
+    // The resolve path already wiped it before scheduling the launch, and
+    // the launch has since pushed the final night's own "-N green" charge;
+    // clearing again threw that line away a second before the "+red"
+    // fire-sale was due to stack under it. Scrubbing is still covered by
+    // the tick-level clear.
     const STEP = 1150;
     let cursor = startDelayMs;
     let total = 0;
@@ -1895,6 +2235,14 @@
     const anyRed = _activeSeats.some(
       (s) => settle[s] && (settle[s].vault_red_loss | 0) > 0);
 
+    // This green is NOT the green ``_osShowGreenCharge`` bills, and the two
+    // can never double-debit: that one is the parcels DISPOSED at each
+    // orbit (already in the running score, so it is a label only), this one
+    // is whatever is still HELD in the vault at season close (not in the
+    // running score, so it tweens). Disjoint by construction. In practice
+    // settlement flushes the vault before this is read, so ``green_penalty``
+    // is 0 on every season in ``seasons/`` and this branch does not fire —
+    // kept because a save that ends holding green is still scored for it.
     if (anyGreen) {
       const t = setTimeout(() => {
         for (const s of _activeSeats) {

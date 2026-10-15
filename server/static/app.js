@@ -647,6 +647,248 @@
    *  cinematic (animate → reveal live → pop recap) controls the reveal
    *  order instead of flashing the end-state + recap before the replay. */
   let _suppressLiveReveal = false;
+
+  /* ── v1.53 — the boot sequence ───────────────────────────────────────
+   *
+   * A session used to assemble in front of you: a dim `# loading season…`,
+   * then the whole grid at once, then stations appearing one payload at a
+   * time. Nothing was broken about it, but the first thing a new player
+   * saw was the machinery.
+   *
+   * So: hold a black curtain (static markup in index.html, up from the
+   * first paint) until the board and the stations are both ready, then
+   * lift it onto the fog spreading out from the middle of the map and the
+   * stations teleporting in.
+   *
+   * `?boot=0` skips all of it, which the film rig and the browser probes
+   * set — they drive this UI for a living and a curtain that has to be
+   * waited out is a curtain that silently costs every shot four seconds.
+   * Mirrors the existing `?station=0`.
+   */
+  const BOOT_ENABLED = (() => {
+    if (_watchParams.get("boot") === "0") return false;
+    // The films install their own curtain at document start and then cut
+    // the boot out in post, so ours is a second curtain they would have
+    // to wait out and a reveal they would film by accident. They set this
+    // in the same init script; a global rather than a query param because
+    // the rigs navigate to dozens of hand-built URLs and one of them will
+    // always be the one that forgot.
+    try { return window.__SOC_NO_BOOT__ !== true; } catch (_e) { return true; }
+  })();
+  /** True while the boot animation owns the board.
+   *
+   *  `refreshSoloPlayerMap` honours this the same way it honours
+   *  `_suppressLiveReveal`, and for the same reason: `paintPlayerMap`
+   *  replaces the grid wholesale, so a poll landing mid-reveal would
+   *  throw away every cell that was part-way through animating and the
+   *  wave would restart from nothing. Unlike `_suppressLiveReveal` this
+   *  one is not scoped to a single `pullAllMaps` call — the animation
+   *  outlives the fetch that triggered it — so it is cleared on a timer
+   *  that cannot be skipped, not in a `finally`. */
+  let _bootHoldsBoard = false;
+  /** The reveal is a one-off per page load. Every later `paintPlayerMap`
+   *  (and there are many — the live poller repaints constantly) must be
+   *  an ordinary paint. */
+  let _bootRevealDone = false;
+  /** v1.53 — the session whose FIRST load is still in flight, or null.
+   *
+   *  A finished season now opens at day 1 and plays the boot animation,
+   *  which means the greeting it used to get — victor sweep, results
+   *  table, scrubber parked on the last night — is no longer right:
+   *  it announces the ending before showing the beginning. Results stay
+   *  one click away on the existing button, and still fire the moment
+   *  you play through to the end.
+   *
+   *  A flag is needed because the two halves of the decision arrive in
+   *  the wrong order. `refreshStatus` runs first and is what pops the
+   *  live finale; the replay payload that says "open this at tick 0"
+   *  only lands afterwards. So the status pull has to be told that this
+   *  particular completion is a season being OPENED rather than one
+   *  that has just ended under the player. */
+  let _openingSession = null;
+  /** Set by `_bootReady` when the session has finished loading.
+   *
+   *  The reveal deliberately does NOT fire on the first paint it sees.
+   *  A season paints at least twice on the way in — the live percept
+   *  lands from `/view`, then the replay payload arrives and the scrubber
+   *  repaints at whichever day it opens on. Revealing the first of those
+   *  would animate a board that is about to be replaced, so the reveal
+   *  waits to be told the loading is over. */
+  let _bootLoaded = false;
+  /** @type {number | null} */
+  let _bootFailsafe = null;
+
+  function _bootEl() { return document.getElementById("cc-boot"); }
+
+  /** Take the curtain down NOW, with no fade and no animation.
+   *
+   *  For every case that never earned a reveal: nothing in the address
+   *  to load (the idle "start NEW GAME" screen), boot switched off, a
+   *  failed load, or a seat picker that has to be answered before the
+   *  session can finish coming up.
+   *
+   *  Hidden rather than removed, because the idle screen is one click
+   *  away from NEW GAME — which IS a boot, and wants the curtain back.
+   *  `.cc-boot[hidden]` is `display:none !important`, so a parked
+   *  curtain cannot cover anything. */
+  function _bootDismiss() {
+    if (_bootFailsafe !== null) { clearTimeout(_bootFailsafe); _bootFailsafe = null; }
+    const el = _bootEl();
+    if (el) {
+      el.hidden = true;
+      el.classList.remove("cc-boot--out");
+    }
+    _bootHoldsBoard = false;
+    // Dismissing means the boot is over, not paused. In particular the fog
+    // must not run: the page is already on screen, and spreading a board
+    // the player can see is worse than not animating it at all.
+    _bootRevealDone = true;
+    window.__SOC_BOOT_PENDING__ = false;
+    try {
+      if (typeof window.osOnBootCancel === "function") window.osOnBootCancel();
+    } catch (_e) { /* a station that will not arrive must not stop the game */ }
+  }
+
+  /** Put the curtain back up for a boot that happens after the page has
+   *  already settled — NEW GAME from the idle screen, or a second game
+   *  spawned in the same tab. Both are a fresh board arriving, so both
+   *  reset the once-per-load reveal flags. */
+  function _bootRearm() {
+    if (!BOOT_ENABLED) return;
+    const el = _bootEl();
+    if (!el) return;
+    el.hidden = false;
+    el.classList.remove("cc-boot--out");
+    _bootLoaded = false;
+    _bootRevealDone = false;
+    _bootStep(0.06, "spawning");
+    _bootArm();
+    // station.js read `__SOC_BOOT_PENDING__` once, at its own module init,
+    // and by now that answer is stale — so a late boot has to say so out
+    // loud. Safe to call: this only ever runs after the page has settled.
+    try {
+      if (typeof window.osOnBootArm === "function") window.osOnBootArm();
+    } catch (_e) { /* non-fatal */ }
+  }
+
+  /** v1.53 — play the boot again, for the camera. Returns the ms until
+   *  the board is settled, so the rig knows when its take starts.
+   *
+   *  `backstage/films/make_zoomout_clips.py` opens the four
+   *  season-start stills on the boot and cannot film the real one. It
+   *  fires when the first load resolves, which on a Snowflake season is
+   *  up to four minutes before the take (the replay strip is what the
+   *  shoot waits on, and it arrives long after the maps), on the seat
+   *  view rather than the observer's, and on whatever day the session
+   *  opens at rather than the one the shot wants.
+   *
+   *  It is not a re-enactment. `_bootRearm` + `_bootReady` is the exact
+   *  pair NEW GAME goes through, so what the camera gets is the shipped
+   *  animation on the shipped path — the only thing invented is the
+   *  progress bar's pace, and even that walks the real stage names in
+   *  the real order. Harmless if called by anything else: the worst it
+   *  can do is animate a board that is already on screen.
+   */
+  window.__socBootReplay = function (holdMs) {
+    if (!BOOT_ENABLED) return 0;
+    const hold = Math.max(0, Number(holdMs) || 0);
+    _bootRearm();
+    const stages = [[0.18, "handshake"], [0.42, "session"],
+                    [0.72, "percept"], [0.94, "season"]];
+    stages.forEach(([frac, msg], i) => {
+      window.setTimeout(() => _bootStep(Number(frac), String(msg)),
+                        Math.round(hold * (i + 1) / (stages.length + 1)));
+    });
+    window.setTimeout(_bootReady, hold);
+    // Curtain, then the fog crossing the board, then the cells' own fade.
+    // The stations are cued inside that window (see `_maybeBootReveal`).
+    return hold + BOOT_LIFT_MS + BOOT_SPREAD_MS + BOOT_JITTER_MS
+      + BOOT_CELL_MS;
+  };
+
+  /** Arm the curtain for a session that is about to load.
+   *
+   *  The failsafe is the whole reason this is a function rather than a
+   *  line. Every path that lifts the curtain is downstream of a fetch,
+   *  and a fetch that rejects, hangs, or lands in a branch nobody
+   *  anticipated would leave a black screen with a stalled bar and no
+   *  way back — strictly worse than the assembling-in-public problem
+   *  this replaces. So the curtain is on a dead-man's switch from the
+   *  moment it is armed. Generous, because a cold Snowflake season
+   *  legitimately takes a while and cutting to a half-built board early
+   *  is the thing being avoided. */
+  function _bootArm() {
+    if (!BOOT_ENABLED) { _bootDismiss(); return; }
+    // Read by station.js at ITS module init, which is after this file's
+    // boot IIFE has already run — hence a flag rather than a call. See
+    // the note beside `osOnBootTeleport`.
+    window.__SOC_BOOT_PENDING__ = true;
+    // Note this does NOT set `_bootHoldsBoard`. The board must paint
+    // normally while the curtain is up — that painted board is what the
+    // reveal reveals. The hold starts when the animation does.
+    _bootFailsafe = window.setTimeout(() => {
+      _bootFailsafe = null;
+      _bootLift();
+    }, 25000);
+  }
+
+  /** Advance the bar. `frac` is 0..1, `msg` the line under it. */
+  function _bootStep(frac, msg) {
+    const fill = document.getElementById("cc-boot-fill");
+    const line = document.getElementById("cc-boot-msg");
+    if (fill) fill.style.width = `${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%`;
+    if (line && msg) line.textContent = `// ${msg}`;
+  }
+
+  /** How long the curtain takes to fade. Must match `cc-boot-out`. */
+  const BOOT_LIFT_MS = 480;
+
+  /** Lift the curtain onto whatever is behind it. Idempotent.
+   *
+   *  @returns {number} ms until the curtain is actually gone, so the
+   *    reveal can offset itself and play in the clear rather than
+   *    half-behind black.
+   */
+  function _bootLift() {
+    const el = _bootEl();
+    if (!el || el.classList.contains("cc-boot--out")) return 0;
+    if (_bootFailsafe !== null) { clearTimeout(_bootFailsafe); _bootFailsafe = null; }
+    _bootStep(1, "ready");
+    el.classList.add("cc-boot--out");
+    window.setTimeout(() => {
+      el.hidden = true;
+      el.classList.remove("cc-boot--out");
+    }, BOOT_LIFT_MS + 40);
+    return BOOT_LIFT_MS;
+  }
+
+  /** The session has finished loading — run the reveal.
+   *
+   *  Called from each of the three ways in (open a season, join a seat,
+   *  spawn a new game) at the point their initial load resolves. Goes
+   *  through a frame first so a repaint queued by that same load has
+   *  landed before the cells are measured and staggered. */
+  function _bootReady() {
+    if (_bootLoaded) return;
+    _bootLoaded = true;
+    const go = () => {
+      try {
+        _maybeBootReveal(mapPlayer);
+      } catch (_e) {
+        _bootRevealDone = true;
+        _bootHoldsBoard = false;
+      }
+      // Nothing to reveal — an empty watcher, an error placeholder, a
+      // board that has not painted. Show whatever is there rather than
+      // sitting on black until the failsafe notices.
+      if (!_bootRevealDone) _bootLift();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => window.setTimeout(go, 60));
+    } else {
+      window.setTimeout(go, 60);
+    }
+  }
   /** v1.22 — the replay frame whose cells are ON THE BOARD right now.
    *  Replay frames ship EVERY seat's dense array, so a watcher can be given
    *  exact rival borders instead of inferred ones.
@@ -1635,12 +1877,27 @@
       return out;
     }
 
-    const echo = Boolean(c.stale || c.echo_probe);
+    // v1.53 — in OBS the badge reports the HOUSES' collective sight,
+    // which is the only reading that means anything there: the observer
+    // can see every square by definition, so a badge describing the
+    // observer would say LIVE on all 1120 of them, and did.
+    //
+    // FOG here keeps the full terrain readout under it, unlike the
+    // branch above. That is not an inconsistency — the observer really
+    // does know what is on that square, and the badge is telling you
+    // that no House does. It matches the board, where the same cell is
+    // painted dim but legible.
+    const seen = meta && typeof meta.obsVis === "number" ? meta.obsVis : null;
+    const echo = seen != null
+      ? seen === 1
+      : Boolean(c.stale || c.echo_probe);
     const t = _tipTerrain(c);
     let out = head(
-      echo
-        ? `<span class="cc-celltip-vis cc-celltip-vis--echo">ECHO</span>`
-        : `<span class="cc-celltip-vis cc-celltip-vis--live">LIVE</span>`,
+      seen === 0
+        ? `<span class="cc-celltip-vis cc-celltip-vis--fog">FOG</span>`
+        : echo
+          ? `<span class="cc-celltip-vis cc-celltip-vis--echo">ECHO</span>`
+          : `<span class="cc-celltip-vis cc-celltip-vis--live">LIVE</span>`,
     );
 
     // Terrain line: colour, tier, and the exact number when we have it.
@@ -1974,8 +2231,20 @@
         // ``emp_cloud`` stamps) still surface those objects in the
         // tooltip. Live game views leave these undefined and rely
         // on the per-cell payload from player_dense_view.
-        const meta = (store.mines || store.empClouds)
-          ? { mines: store.mines || [], empClouds: store.empClouds || [] }
+        // v1.53 — `obsVis` rides along so the LIVE/ECHO badge can
+        // describe what the HOUSES can account for. In OBS the cell
+        // handed to the formatter comes off the omniscient array, which
+        // carries no staleness at all, so the badge said LIVE on every
+        // square on the board including ground no seat had looked at in
+        // days. See the note in `paintObsVisionMap`.
+        const meta = (store.mines || store.empClouds || store.obsVis)
+          ? {
+              mines: store.mines || [],
+              empClouds: store.empClouds || [],
+              obsVis: store.obsVis
+                ? store.obsVis[yi * store.width + xi]
+                : undefined,
+            }
           : undefined;
         // While aiming, what the shot COVERS is the headline — the terrain
         // under the crosshair is secondary — so the area block leads.
@@ -2444,6 +2713,118 @@
     } catch (_e) {
       /* non-fatal — the lab overlay must never break a real board */
     }
+    try {
+      _maybeBootReveal(host);
+    } catch (_e) {
+      /* non-fatal — a failed reveal must still leave a usable board */
+      _bootRevealDone = true;
+      _bootHoldsBoard = false;
+    }
+  }
+
+  /* ── v1.53 — the fog spreads out from the middle ─────────────────────
+   *
+   * How long the wave takes to reach the furthest corner, and how much
+   * slop each cell gets on top. The jitter is what stops it reading as a
+   * clean expanding disc, which looks like a wipe rather than fog. */
+  const BOOT_SPREAD_MS = 900;
+  const BOOT_JITTER_MS = 190;
+  /** Must match the `cc-boot-cell` duration in styles.css. */
+  const BOOT_CELL_MS = 420;
+
+  /**
+   * Stagger the just-painted grid outward from its centre, once per load.
+   *
+   * Runs off `_afterBoardPaint`, which is the single place that knows the
+   * cells are actually on the board. Everything is scheduled with one
+   * inline `animation-delay` per cell rather than a timer per cell: the
+   * grid arrives as a single `innerHTML` assignment and can be 1120 cells
+   * on a 40x28 board, so handing the schedule to the compositor is both
+   * cheaper and smoother than 1120 `setTimeout`s. Same approach as the
+   * EMP ring's Manhattan delay.
+   */
+  function _maybeBootReveal(host) {
+    if (_bootRevealDone || !_bootLoaded || !BOOT_ENABLED) return;
+    if (!host || host !== mapPlayer) return;
+    const cells = host.querySelectorAll(".cell[data-x]");
+    // `paintPlaceholder` ends up here too, and a placeholder has no cells.
+    // Without this the reveal would be spent on `# loading season…` and
+    // the real board would arrive with no animation at all.
+    if (!cells.length) return;
+    const store = /** @type {any} */ (host).__cellStore || {};
+    const w = Number(store.width) || 0;
+    const h = Number(store.height) || 0;
+    if (!w || !h) return;
+    _bootRevealDone = true;
+
+    // Take the curtain down first and start the wave as it clears, so the
+    // reveal is not playing out behind black.
+    const base = _bootLift();
+
+    if (reduceMotionMq.matches) {
+      // The curtain still lifts and the stations still arrive; they just
+      // arrive already there.
+      _bootTeleportStations(0);
+      return;
+    }
+
+    const cx = (w - 1) / 2;
+    const cy = (h - 1) / 2;
+    // A cell is two characters wide and one line tall, so a circle in
+    // GRID coordinates reaches the screen as a wide ellipse. Weight x by
+    // the measured aspect so the wave is round where the player is
+    // actually looking. Measured rather than assumed because the zoom
+    // control changes the cell size under us.
+    const r0 = cells[0].getBoundingClientRect();
+    const aspect = r0.height > 0 ? r0.width / r0.height : 1;
+    // Normalise against the furthest corner so the wave takes the same
+    // time on a small board as on a large one.
+    const maxD = Math.hypot(cx * aspect, cy) || 1;
+
+    for (const el of cells) {
+      const dx = (Number(el.getAttribute("data-x")) - cx) * aspect;
+      const dy = Number(el.getAttribute("data-y")) - cy;
+      const d = Math.hypot(dx, dy) / maxD;
+      const delay = base + d * BOOT_SPREAD_MS + Math.random() * BOOT_JITTER_MS;
+      /** @type {HTMLElement} */ (el).style.animationDelay =
+        `${Math.round(delay)}ms`;
+      el.classList.add("cell--boot");
+    }
+
+    // Hold the board for the length of the wave. `paintPlayerMap` rebuilds
+    // the grid wholesale, so a live poll landing mid-reveal would discard
+    // every part-animated cell and the wave would vanish rather than
+    // finish. See `_bootHoldsBoard`.
+    _bootHoldsBoard = true;
+    const fogMs = base + BOOT_SPREAD_MS + BOOT_JITTER_MS + BOOT_CELL_MS;
+    // Stations come in over the tail of the wave rather than strictly
+    // after it — waiting for the last corner cell leaves a dead beat.
+    _bootTeleportStations(Math.round(fogMs * 0.72));
+    window.setTimeout(() => {
+      _bootHoldsBoard = false;
+      // Drop the class once it has served its purpose. The `both` fill
+      // mode holds the final frame, which is identical to a normal cell,
+      // but leaving 1120 finished animations in place keeps that many
+      // composited layers alive for no reason.
+      host.querySelectorAll(".cell--boot").forEach((el) => {
+        el.classList.remove("cell--boot");
+        /** @type {HTMLElement} */ (el).style.removeProperty("animation-delay");
+      });
+    }, fogMs + 140);
+  }
+
+  /** Hand the stations their cue, once the fog has had its moment.
+   *
+   *  A function hook rather than an event, to match how the rest of
+   *  `station.js` is wired (`osOnReplayTick`, `osOnLivePlayers` and the
+   *  rest). Absent entirely when the station UI is off (`?station=0`),
+   *  which is why this is guarded rather than assumed. */
+  function _bootTeleportStations(afterMs) {
+    try {
+      if (typeof window.osOnBootTeleport === "function") {
+        window.osOnBootTeleport(afterMs);
+      }
+    } catch (_e) { /* a station that will not arrive must not stop the game */ }
   }
 
   // ── TURN LAB: plan overlay (v1.42) ────────────────────────────────
@@ -2644,27 +3025,67 @@
     const cls = lines ? "map-grid map-grid--lines" : "map-grid";
     const parts = [];
 
-    // v0.9.9 — N-seat fog dim. A cell is considered "seen" by the
-    // collective observer iff at least ONE of the active seats has
-    // it as non-fog in this frame. The pre-v0.9.9 signature only
-    // accepted (p1Cells, p2Cells) so 3/4-seat games dimmed cells
-    // that p3 or p4 could actually see.
+    // v0.9.9 — N-seat fog dim. The pre-v0.9.9 signature only accepted
+    // (p1Cells, p2Cells) so 3/4-seat games dimmed cells that p3 or p4
+    // could actually see.
     const seatLists = seatCellArrays.filter(
       (lst) => Array.isArray(lst) && lst.length,
     );
+
+    // v1.53 — THREE states, not two, and this is the fix for "OBS shows
+    // echo as live".
+    //
+    // The test used to be `pc.kind !== "fog"`, which is the one place in
+    // the app that asked about sight without also asking about
+    // staleness (everywhere else goes through `_cellIsLive`, mirroring
+    // the engine's own branch in `player_dense_view`). A remembered tile
+    // is `kind: "terrain"` with `stale: true`, so it passed — and the
+    // observer painted ground that NOBODY can currently see at full
+    // brightness, indistinguishable from ground under a live probe.
+    //
+    // That is the worst possible place to lose the distinction. OBS is
+    // the view you watch a season in, and most of a mature board is
+    // remembered rather than seen: the board read as almost fully lit,
+    // and the vision outlines drawn over it (which DO use `_cellIsLive`)
+    // enclosed small patches of a bright map for no visible reason.
+    // Only never-seen ground was dim, so the one thing the dim conveyed
+    // was "has anyone ever been here", which no one was asking.
+    //
+    // 2 = some seat has live line of sight · 1 = some seat remembers it,
+    // none can see it now · 0 = no seat has ever seen it. Kept on the
+    // store as well as in the markup because the hover readout needs the
+    // same answer and was getting its own wrong the same way.
+    const obsVis = new Uint8Array(width * height);
+    // v1.53 — what the watcher was looking at a beat ago, carried across
+    // the repaint. A reveal hold has to put a cell back to the step it
+    // was ON SCREEN, and that is not the same as recomputing the step
+    // from the previous frame: a delta can be one of several in a tick,
+    // and a recomputed answer that disagrees with the pixels shows up as
+    // a patch of ground getting BRIGHTER just before the probe lands.
+    const prevStore = /** @type {any} */ (host).__cellStore;
+    const prevVis = prevStore?.obsVis?.length === obsVis.length
+      ? prevStore.obsVis
+      : null;
 
     let idx = 0;
     for (let y = 0; y < height; y++) {
       parts.push('<div class="row">');
       for (let x = 0; x < width; x++) {
         const c = obsCells[idx];
-        let seen = false;
+        let vis = 0;
         for (const lst of seatLists) {
           const pc = lst[idx];
-          if (pc && pc.kind !== "fog") { seen = true; break; }
+          if (!pc || pc.kind === "fog") continue;
+          // Live beats remembered and ends the search; remembered keeps
+          // looking, in case a later seat has eyes on it right now.
+          if (_cellIsLive(pc)) { vis = 2; break; }
+          vis = 1;
         }
+        obsVis[idx] = vis;
         idx++;
-        const dimAttr = seen ? "" : ' data-obs-dim="1"';
+        const dimAttr = vis === 2
+          ? ""
+          : ` data-obs-dim="${vis === 1 ? "echo" : "fog"}"`;
         const collInfo = collisionAttrs(c);
         const fg = c.fg ? `;color:${esc(c.fg)}` : "";
         let tt = occupantsTitle(c);
@@ -2695,7 +3116,9 @@
     host.innerHTML =
       `<div class="${cls}" style="--map-cols:${String(width)}">${parts.join("")}</div>`;
     host.style.setProperty("--map-cols", String(width));
-    /** @type {any} */ (host).__cellStore = { cells: obsCells, width, height };
+    /** @type {any} */ (host).__cellStore = {
+      cells: obsCells, obsVis, prevVis, width, height,
+    };
     bindCellHoverTip(host);
     _afterBoardPaint(host);
   }
@@ -8921,9 +9344,18 @@
     for (const cell of probeMaskedCells) {
       cell.classList.remove("cell--probe-pending");
       cell.classList.remove("cell--probe-revealing");
+      // v1.53 — an OBS hold is an attribute, not a class, and a scrub
+      // that abandoned one used to leave the cell dimmed for good.
+      _dropObsHold(cell);
+      if (cell.dataset) delete cell.dataset.obsHeld;
     }
     probeMaskedCells.clear();
     probeRevealEpoch += 1;
+    // v1.53 — the epoch bump orphans every pending reveal, and with it
+    // every `_releaseVisionBorder` that was going to run on landing. Let
+    // the outlines go here or a scrub mid-flight leaves a permanent hole
+    // in the border layer where a probe was once in the air.
+    _clearVisionHolds();
   }
 
   /**
@@ -9647,13 +10079,19 @@
       if (delta.kind === "drop" && Array.isArray(delta.to)) {
         /** @type {HTMLElement[]} */
         const _echoHolds = [];
-        const _masks = collectNewlyRevealedCells(
-          host, prevFrame, curFrame, delta.to[0], delta.to[1], _echoHolds,
-        );
+        const _omni = _viewIsOmniscient();
+        const _masks = _omni
+          ? collectObsRelitCells(host, prevFrame, curFrame)
+          : collectNewlyRevealedCells(
+            host, prevFrame, curFrame, delta.to[0], delta.to[1], _echoHolds,
+          );
         for (const m of _masks) {
-          m.classList.add("cell--probe-pending");
+          if (!_omni) m.classList.add("cell--probe-pending");
           probeMaskedCells.add(m);
         }
+        // Same hold as the probe streak: a harvester coming down opens
+        // ground too, and its outline was arriving with the frame.
+        const _visionKey = _holdVisionBorder(_masks, delta.owner);
         // v1.7 — also hold the LANDING cell's own post-drop recolour at its
         // pre-drop look until the lifter deposits the unit. A harvester
         // dropping onto a resource harvests it on contact, so the frame paints
@@ -9682,7 +10120,8 @@
         );
         delta._onDeposit = () => {
           if (_landStandin) _landStandin.remove();
-          revealMaskedCells(_masks, [_lx, _ly]);
+          revealMaskedCells(_masks, [_lx, _ly],
+            () => _releaseVisionBorder(_masks, _visionKey));
           _dropStandins(_echoHolds);
           _dropStandins(_doomed);
           playProbeCrushFx(curFrame, [_lx, _ly]);
@@ -9749,18 +10188,26 @@
 
       /** @type {HTMLElement[]} */
       const echoHolds = [];
-      const pendingMasks = collectNewlyRevealedCells(
-        host,
-        prevFrame,
-        curFrame,
-        toXY[0],
-        toXY[1],
-        echoHolds,
-      );
+      const omni = _viewIsOmniscient();
+      const pendingMasks = omni
+        ? collectObsRelitCells(host, prevFrame, curFrame)
+        : collectNewlyRevealedCells(
+          host, prevFrame, curFrame, toXY[0], toXY[1], echoHolds,
+        );
       for (const m of pendingMasks) {
-        m.classList.add("cell--probe-pending");
+        // OBS holds by dimming, not by fog-blocking — see
+        // `collectObsRelitCells`, which has already marked the cell.
+        if (!omni) m.classList.add("cell--probe-pending");
         probeMaskedCells.add(m);
       }
+      // v1.53 — and hold the seat-coloured OUTLINE of that disc back
+      // with the tiles it encloses. The border layer is painted off the
+      // resolved frame, so without this the ring around the new disc is
+      // already drawn when the streak leaves the rail: the shape of
+      // what the probe is about to see announces itself before the
+      // probe gets there, which is the same leak as the tiles and reads
+      // worse because an outline is a hard edge.
+      const _visionKey = _holdVisionBorder(pendingMasks, delta.owner);
       // Pre-capture landing position while cell is still in the DOM
       const landingRect = toCell.getBoundingClientRect();
       const fgHex = (delta.fg || "#ffffff").replace("#", "");
@@ -9817,7 +10264,8 @@
         // hour (§3.16) is the worst case and the easiest to spot. The
         // shared set is still the cancellation ledger, and
         // `revealMaskedCells` deletes from it as it clears each cell.
-        revealMaskedCells(pendingMasks, toXY);
+        revealMaskedCells(pendingMasks, toXY,
+          () => _releaseVisionBorder(pendingMasks, _visionKey));
         // Remembered tiles inside the new disc were held at their echo look
         // rather than fog-blocked; they go live now, with the rest.
         _dropStandins(echoHolds);
@@ -10040,17 +10488,159 @@
    *  frame. OBS / "both" read the global ``cells``; a single seat reads its
    *  own ``cells_by_seat`` (with the legacy p1 alias fallback). Used so the
    *  reveal mask matches the viewer's fog rather than always p1's. */
-  function _frameSeatCells(frame) {
+  function _frameSeatCells(frame, seatOverride) {
     if (!frame) return null;
-    if (replayViewSeat === "obs" || replayViewSeat === "both") {
+    const seat = seatOverride || replayViewSeat;
+    if (seat === "obs" || seat === "both") {
       return Array.isArray(frame.cells) ? frame.cells : null;
     }
     return (
-      (frame.cells_by_seat && frame.cells_by_seat[replayViewSeat]) ||
-      frame[`cells_player_${replayViewSeat}`] ||
-      (replayViewSeat === "p1" ? frame.cells_player : null) ||
+      (frame.cells_by_seat && frame.cells_by_seat[seat]) ||
+      frame[`cells_player_${seat}`] ||
+      (seat === "p1" ? frame.cells_player : null) ||
       null
     );
+  }
+
+  /** Grid indices the observer is holding dim until their opener lands.
+   *
+   *  Flat, unlike the seat-keyed `_visionHeldBySeat`, because in OBS the
+   *  board is painted from the union of every seat's sight and so is
+   *  this. A per-seat hold left the outlines disagreeing with the tiles
+   *  whenever two Houses opened ground in the same tick: the hold was
+   *  filed under the acting seat, the rival's band was not filtered by
+   *  it, and you got a band drawn around ground that was still dark. */
+  const _obsHeldCells = new Set();
+
+  /** Is the board currently showing everything? */
+  function _viewIsOmniscient() {
+    return replayViewSeat === "obs" || replayViewSeat === "both";
+  }
+
+  /** Which seat's vision BAND a reveal belongs to (v1.53).
+   *
+   *  Used only to key `_visionHeldBySeat`. In a seat view the ground
+   *  opening is the viewer's own; in OBS every seat has a band of its
+   *  own and the one that should wait is the acting seat's. */
+  function _revealSeat(owner) {
+    if (!_viewIsOmniscient()) return replayViewSeat;
+    return (typeof owner === "string" && /^p[1-9]$/.test(owner))
+      ? owner
+      : null;
+  }
+
+  /** The Houses' collective sight for a frame — the same three states
+   *  `paintObsVisionMap` paints. 2 live · 1 remembered · 0 never seen. */
+  function _obsUnion(frame, w, h) {
+    const out = new Uint8Array(w * h);
+    if (!frame) return out;
+    for (const seat of _activeSeatsForView()) {
+      const arr = frame.cells_by_seat?.[seat]
+        || frame[`cells_player_${seat}`]
+        || (seat === "p1" ? frame.cells_player : null);
+      if (!Array.isArray(arr) || !arr.length) continue;
+      for (let i = 0; i < out.length && i < arr.length; i++) {
+        if (out[i] === 2) continue;
+        const c = arr[i];
+        if (!c || c.kind === "fog") continue;
+        out[i] = _cellIsLive(c) ? 2 : 1;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * In OBS, hold ground that is about to LIGHT UP at the dim it had.
+   *
+   * v1.53 — the observer needs the same "wait for the unit that opens
+   * it" beat as a seat, and cannot get it the same way. A seat's mask is
+   * a fog block at full strength, which is honest there because the
+   * ground really is unseen. Dropped into OBS unchanged it painted a
+   * grey disc on a board whose fog is already dim — brighter than the
+   * fog around it, so the mask advertised the landing it was supposed
+   * to hide.
+   *
+   * The observer's board already says all three things through
+   * `data-obs-dim`, so the hold is mostly just "don't lift the dim
+   * yet": put the cell back to the step it was on and let the reveal
+   * wavefront take the attribute off. What you see is the disc coming
+   * up from dim to lit in a circle, which is what the pop always was.
+   * Never-seen ground takes the block as well, at that dim — see below.
+   *
+   * Measured on the UNION rather than the acting seat, because that is
+   * what the board is painted from: a cell a rival already had eyes on
+   * is already lit, and dimming it so this probe can re-reveal it would
+   * put a dark ring around ground nothing happened to.
+   *
+   * Both ends of the hold are taken from the PAINTED board rather than
+   * recomputed from frames, and that is load-bearing. A tick paints once
+   * and then animates every delta in it, so a delta's own frame pair is
+   * not what the watcher is looking at. Trusting the frames let the hold
+   * dim a cell to a step brighter than the one on screen (a disc of
+   * ground visibly LIGHTENING under an incoming probe, then going dark
+   * again when the real reveal ran), and let it hold cells the board was
+   * not showing lit at all, which then popped on release. The frame pair
+   * now only says WHICH delta owns a cell; the screen says what to do.
+   */
+  function collectObsRelitCells(host, prevFrame, curFrame) {
+    /** @type {HTMLElement[]} */
+    const out = [];
+    const w = replayDims.width;
+    const h = replayDims.height;
+    const store = host && /** @type {any} */ (host).__cellStore;
+    const now = store?.obsVis;
+    const was = store?.prevVis;
+    // No previous paint means no delta to hold. The seat path errs the
+    // other way ("masking too much only delays a pop") and cannot do
+    // that here: with nothing to diff against, every lit cell on the
+    // board would count as newly lit and the whole map would blink.
+    if (!w || !h || !prevFrame || !now || !was) return out;
+    const cur = _obsUnion(curFrame, w, h);
+    for (let i = 0; i < cur.length && i < now.length; i++) {
+      // ...this delta opened it, the board really is showing it lit,
+      // and it was not lit a beat ago.
+      if (cur[i] !== 2 || now[i] !== 2 || was[i] === 2) continue;
+      const el = findReplayCell(host, i % w, Math.floor(i / w));
+      if (!el) continue;
+      el.setAttribute("data-obs-dim", was[i] === 1 ? "echo" : "fog");
+      // Ground nobody had ever seen needs its CONTENT held too, not
+      // just its brightness — the repaint has already swapped a fog
+      // tile for real terrain underneath, and 18% of terrain is a pale
+      // wash, not fog. That wash was the "flash" — a grey disc arriving
+      // a beat ahead of the probe and then going dark again when the
+      // reveal actually ran. Remembered ground does not need it: echo
+      // and live are the same tile at two brightnesses, so the dim
+      // alone is honest there.
+      if (was[i] === 0) el.classList.add("cell--probe-pending");
+      _obsHeldCells.add(i);
+      out.push(el);
+    }
+    // The hold goes on INSTANTLY and only the release animates, which
+    // is why `data-obs-held` — the attribute the 260ms opacity
+    // transition is keyed to — is a second pass with a style flush in
+    // between. Set together, the transition applied to the hold as
+    // well: the cell had just been painted live, so it faded from full
+    // brightness DOWN to fog over a quarter second, and what you saw
+    // was the ground about to be revealed lighting up ahead of the
+    // probe, going dark, and only then playing its proper reveal.
+    if (out.length) {
+      void /** @type {any} */ (host).offsetWidth;
+      for (const el of out) el.dataset.obsHeld = "1";
+    }
+    return out;
+  }
+
+  /** Put a held OBS cell back the way the frame painted it. */
+  function _dropObsHold(el) {
+    if (!el || !el.dataset || !el.dataset.obsHeld) return false;
+    el.removeAttribute("data-obs-dim");
+    const w = replayDims.width;
+    const x = Number(el.dataset.x);
+    const y = Number(el.dataset.y);
+    if (w && Number.isFinite(x) && Number.isFinite(y)) {
+      _obsHeldCells.delete(y * w + x);
+    }
+    return true;
   }
 
   /** Fade a set of masked (``cell--probe-pending``) cells in — used by both
@@ -10071,19 +10661,98 @@
    *  are squeezed to fit rather than allowed to run long. */
   const _REVEAL_SWEEP_CAP_MS = 460;
 
-  function revealMaskedCells(masks, origin) {
-    if (!Array.isArray(masks) || !masks.length) return;
+  /** Cells whose vision is resolved in the frame but whose outline is
+   *  still waiting on the unit that opens it, as seat -> Set<grid idx>.
+   *
+   *  Keyed by seat rather than a flat set because two seats can hold
+   *  overlapping ground: dropping a shared cell out of everyone's band
+   *  would cut a hole in an outline that has nothing to do with the
+   *  probe in the air. */
+  const _visionHeldBySeat = new Map();
+
+  /** Park the outline of `cells` until the reveal lands.
+   *
+   *  Returns the key it filed them under, which the caller must hand
+   *  back to `_releaseVisionBorder`. Recomputing the key at release
+   *  time would get it wrong the moment someone changes seat mid-flight
+   *  — `_revealSeat` reads `replayViewSeat` — and the hold would leak. */
+  function _holdVisionBorder(cells, owner) {
+    const w = replayDims.width;
+    if (!w || !Array.isArray(cells) || !cells.length) return null;
+    // OBS files its own holds flat, as `collectObsRelitCells` gathers
+    // them; there is nothing to key and nothing to add here.
+    if (_viewIsOmniscient()) { paintVisionBorders(); return "obs"; }
+    const seat = _revealSeat(owner);
+    if (!seat) return null;
+    let held = _visionHeldBySeat.get(seat);
+    if (!held) { held = new Set(); _visionHeldBySeat.set(seat, held); }
+    for (const el of cells) {
+      const x = Number(el.dataset.x);
+      const y = Number(el.dataset.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) held.add(y * w + x);
+    }
+    paintVisionBorders();
+    return seat;
+  }
+
+  /** Give it back and redraw. Releases the listed cells rather than the
+   *  whole seat, so a second probe still in the air keeps its own hold —
+   *  the same trap the shared `probeMaskedCells` set already taught us
+   *  about one layer up, where the first probe to land was lifting
+   *  everybody's mask. */
+  function _releaseVisionBorder(cells, seat) {
+    const w = replayDims.width;
+    if (seat === "obs") {
+      for (const el of cells || []) _dropObsHold(el);
+      paintVisionBorders();
+      return;
+    }
+    const held = seat ? _visionHeldBySeat.get(seat) : null;
+    if (!held || !w || !Array.isArray(cells)) return;
+    for (const el of cells) {
+      const x = Number(el.dataset.x);
+      const y = Number(el.dataset.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) held.delete(y * w + x);
+    }
+    if (!held.size) _visionHeldBySeat.delete(seat);
+    paintVisionBorders();
+  }
+
+  /** A scrub or a repaint abandons every pending reveal, so nothing is
+   *  left holding an outline that will never be released. */
+  function _clearVisionHolds() {
+    if (!_visionHeldBySeat.size && !_obsHeldCells.size) return;
+    _visionHeldBySeat.clear();
+    _obsHeldCells.clear();
+    paintVisionBorders();
+  }
+
+  function revealMaskedCells(masks, origin, onDone) {
+    const done = typeof onDone === "function" ? onDone : () => {};
+    if (!Array.isArray(masks) || !masks.length) { done(); return; }
     const epoch = probeRevealEpoch;
     const finish = (cells) => {
       for (const m of cells) {
         m.classList.remove("cell--probe-pending");
         m.classList.remove("cell--probe-revealing");
+        // Belt and braces: a bail-out can reach `finish` without ever
+        // running `lift`, and a stale index in `_obsHeldCells` punches a
+        // permanent hole in every outline drawn afterwards.
+        _dropObsHold(m);
+        if (m.dataset) delete m.dataset.obsHeld;
         probeMaskedCells.delete(m);
       }
     };
     const lift = (cells) => {
       if (epoch !== probeRevealEpoch) return;
-      for (const m of cells) m.classList.add("cell--probe-revealing");
+      // Two ways to lift, one wavefront. A seat's fog block fades out
+      // through `--probe-revealing`; an OBS cell simply stops being
+      // dimmed and rises to full over the CSS transition on
+      // `[data-obs-held]`. Both land on the same beat.
+      for (const m of cells) {
+        m.classList.add("cell--probe-revealing");
+        _dropObsHold(m);
+      }
       window.setTimeout(() => {
         if (epoch !== probeRevealEpoch) return;
         finish(cells);
@@ -10094,6 +10763,9 @@
     const oy = Array.isArray(origin) ? Number(origin[1]) : NaN;
     if (!Number.isFinite(ox) || !Number.isFinite(oy)) {
       lift(masks);
+      window.setTimeout(() => {
+        if (epoch === probeRevealEpoch) done();
+      }, _REVEAL_FADE_MS);
       return;
     }
 
@@ -10133,8 +10805,17 @@
       if (i === 0) lift(cells);
       else window.setTimeout(() => lift(cells), i * step);
     });
+    // After the outermost ring has finished fading, not when the wave
+    // starts: the outline is the shape of the whole disc, so releasing
+    // it on the first beat would draw the finished edge over ground
+    // still coming out of fog.
+    window.setTimeout(() => {
+      if (epoch === probeRevealEpoch) done();
+    }, (keys.length - 1) * step + _REVEAL_FADE_MS);
   }
 
+  /** The SEAT path. OBS has its own — `collectObsRelitCells` — because
+   *  the observer has no fog to flip and no fog to stand in with. */
   function collectNewlyRevealedCells(
     host, prevFrame, curFrame, dropX, dropY, echoHoldsOut,
   ) {
@@ -10782,10 +11463,94 @@
    *  rings to expand at radius 0, and staging one would draw an area
    *  the weapon does not have.
    */
+  /** This frame's SNAP events, rebuilding them if the archive lost them.
+   *
+   *  v1.53 — SOC_REPLAY_FRAME had no `snap` column between v1.36, when
+   *  the weapon shipped, and now, so every Snowflake-archived SNAP was
+   *  written as a frame with the right tag, caption and log line and a
+   *  null payload. `seasons/` keeps frames verbatim and was unaffected,
+   *  which is how it survived a whole competition: it played offline
+   *  and did nothing in the league. The column exists now
+   *  (`snowflake/soc_schema.sql`, and `tests/test_replay_frame_columns.py`
+   *  guards the next weapon), but a payload that was never written
+   *  cannot be backfilled.
+   *
+   *  What CAN be recovered is the only part the launch needs. The
+   *  engine's own caption carries the target — `_describe_move` puts it
+   *  in `attempted` as `snap_launch @(34,4)` — and the rest of the
+   *  choreography is fixed by the weapon: one missile, radius 0, the
+   *  firing seat in `owner`.
+   *
+   *  What cannot is the aftermath: which probes died and which
+   *  harvesters were crippled were in the payload and are gone, so an
+   *  archived strike plays the dart and the flash and skips the kill
+   *  marks. That is a silent, bounded loss on two frames in one
+   *  season, and it is better than the launch not happening at all.
+   *  Live and future seasons take the first branch and are unaffected.
+   */
+  function _snapEventsFor(frame) {
+    const events = Array.isArray(frame?.snap) ? frame.snap : [];
+    if (events.length) return events;
+    if (frame?.tag !== "snap_launch") return [];
+    const said = String(frame.attempted || frame.caption || "");
+    const at = said.match(/\((\d+)\s*,\s*(\d+)\)/);
+    if (!at) return [];
+    const xy = [Number(at[1]), Number(at[2])];
+    return [{
+      kind: "snap_launch",
+      owner: frame.owner,
+      at: xy,
+      targets: [xy],
+      radius: 0,
+      missiles: 1,
+      recovered: true,
+    }];
+  }
+
+  /** This frame's live scorch marks, rebuilt if the archive lost them.
+   *
+   *  v1.53, and the other half of `_snapEventsFor`. `snap_clouds` was
+   *  dropped by the same missing column, and without it the mark
+   *  cannot merely be absent — it actively undoes the strike. The
+   *  impact tile and the scorch are deliberately the same element
+   *  (`.snap-cloud-cell`, the strike arriving hot), so the overlay's
+   *  repaint clears the tile the impact just laid and finds nothing to
+   *  replace it with. A recovered launch would flash and then wipe
+   *  itself a frame later.
+   *
+   *  Rebuildable because the cloud has no state worth keeping: SNAP
+   *  burns for exactly one hour (`SNAP_CLOUD_HOURS`), radius 0, on the
+   *  square it was fired at. So any strike sharing this frame's day
+   *  and hour is still alight, and that is the whole snapshot.
+   */
+  function _snapCloudsFor(frame) {
+    const given = Array.isArray(frame?.snap_clouds) ? frame.snap_clouds : [];
+    if (given.length || !frame) return given;
+    if (!Array.isArray(nightReplayFrames) || !nightReplayFrames.length) {
+      return given;
+    }
+    const { day, hour } = frame;
+    if (day == null || hour == null) return given;
+    const out = [];
+    for (const f of nightReplayFrames) {
+      if (f?.tag !== "snap_launch" || f.day !== day || f.hour !== hour) continue;
+      // A frame that kept its payload keeps its clouds too; only the
+      // archived ones need inventing.
+      if (Array.isArray(f.snap) && f.snap.length) continue;
+      for (const ev of _snapEventsFor(f)) {
+        out.push({
+          cx: ev.at[0], cy: ev.at[1], r: 0,
+          hours_remaining: 1, owner: ev.owner, recovered: true,
+        });
+      }
+    }
+    return out.length ? out : given;
+  }
+
   function playSnapFx(frame, prevFrame) {
     if (!mapPlayer) return;
     if (reduceMotionMq.matches) return;
-    const events = Array.isArray(frame?.snap) ? frame.snap : [];
+    const events = _snapEventsFor(frame);
     if (!events.length) return;
 
     const shots = [];
@@ -10965,7 +11730,7 @@
     collisionFxLayer
       .querySelectorAll(".snap-cloud-cell")
       .forEach((n) => n.remove());
-    const clouds = Array.isArray(frame?.snap_clouds) ? frame.snap_clouds : [];
+    const clouds = _snapCloudsFor(frame);
     if (!clouds.length) return;
     const hostRect = collisionFxLayer.getBoundingClientRect();
     const tiles = [];
@@ -13226,34 +13991,67 @@
     return Number.isFinite(r) && r > 0 ? r : 4;
   }
 
+  /** Does the viewer lawfully know a rival probe is on this cell RIGHT
+   *  NOW — as opposed to merely having seen one there once?
+   *
+   *  v1.22 asked only "is this cell in your live sight", on the grounds
+   *  that a remembered occupant may have moved on. That is the right
+   *  rule for a harvester and the wrong one for a probe, and the
+   *  difference showed: your own live footprint is small and shifts
+   *  every hour, so a rival probe you can plainly see marked on the
+   *  board dropped in and out of the inference as your own sight swept
+   *  past it. The dashed band flickered on and off through the night
+   *  and read as "the outlines are only drawn sometimes".
+   *
+   *  Two things make a probe the exception. It does not MOVE — that is
+   *  the whole objection, and it does not apply. And its launch is
+   *  public (§3.15): the engine stamps a marker glyph onto the echo or
+   *  fog cell it landed on and PRUNES that marker when the probe dies
+   *  or decays (`_pulse_probe_launch`, and the `probe_launch_glyph`
+   *  branch of `player_dense_view`). So the marker is not a memory the
+   *  client is choosing to trust past its date — it is a live, engine-
+   *  maintained statement that the probe is still there.
+   *
+   *  Which is exactly the intel §3.15 exists to grant, so the band it
+   *  feeds stays dashed and stays clipped to ground the viewer can see
+   *  for itself. Nothing here widens what is drawn — only when. */
+  function _rivalProbeIsKnownOn(c) {
+    if (_cellIsLive(c)) return true;
+    // A probe occupant on a cell you cannot see, carrying a glyph, IS
+    // the public marker: it is the one thing that puts an `entity` on
+    // fog (see `_viewerHasProbeEchoAt`, which keys off the same shape).
+    return Boolean(c.entity && c.entity.ch);
+  }
+
   /**
    * Rival vision the seat can legitimately infer, as {seat: maskFn}.
    *
    * No payload carries a rival's LOS — fog would be meaningless if it did.
    * What a seat DOES lawfully know is where some rival probes are: launches
    * are public (§3.15) and any probe standing in your own LOS is visible.
+   * `_rivalProbeIsKnownOn` is the gate, and its note is worth reading —
+   * it is the difference between a band that holds and one that blinks.
    * The disk around a known probe is then simple arithmetic, because the
    * radius is published in the canonical config. So this reconstructs the
    * part of a rival's vision the seat has earned the right to know, and no
    * more — which is why it is drawn dashed. It is a partial, inferred
    * footprint, not the rival's true sight.
    */
-  function _inferredRivalMasks(cells, w, h) {
+  function _inferredRivalMasks(cells, w, h, viewSeat) {
     /** @type {Map<string, Array<number[]>>} seat -> probe centres */
     const bySeat = new Map();
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
       if (!c) continue;
-      // v1.22 — only a probe standing in your LIVE sight counts. An echo or
-      // memory cell can still carry the occupant that was there last night,
-      // and inferring a live disk from a remembered probe would outline
-      // vision the rival may have picked up and moved on from.
-      if (!_cellIsLive(c)) continue;
+      if (!_rivalProbeIsKnownOn(c)) continue;
       const occ = Array.isArray(c.occupants) ? c.occupants : [];
       for (const o of occ) {
         if (!o || o.type !== "probe") continue;
         const owner = String(o.owner || "");
-        if (!owner || owner === MY_SEAT) continue;
+        // v1.53 — "rival" is relative to whoever is being WATCHED, which
+        // in a replay is not necessarily you. Keyed off MY_SEAT, opening
+        // p2's replay drew a dashed band around p2's own probes.
+        if (!owner || owner === (viewSeat || MY_SEAT)) continue;
         const arr = bySeat.get(owner);
         if (arr) arr.push([i % w, Math.floor(i / w)]);
         else bySeat.set(owner, [[i % w, Math.floor(i / w)]]);
@@ -13286,26 +14084,55 @@
     if (!w || !h) return [];
     const bands = [];
 
-    const maskOf = (arr) => {
+    const maskOf = (arr, seat) => {
+      // v1.53 — ground this seat can see in the resolved frame but whose
+      // opener is still in the air. Held out of the mask so the outline
+      // arrives with the probe rather than with the frame.
+      // In OBS the hold is flat (see `_obsHeldCells`): the tiles are
+      // painted from the union, so every seat's band has to respect the
+      // same hold or an outline ends up enclosing ground that is still
+      // dark.
+      const held = _viewIsOmniscient()
+        ? _obsHeldCells
+        : _visionHeldBySeat.get(seat);
       const m = new Uint8Array(w * h);
       let n = 0;
+      let live = 0;
       for (let i = 0; i < arr.length && i < m.length; i++) {
-        if (_cellIsLive(arr[i])) {
-          m[i] = 1;
-          n++;
-        }
+        if (!_cellIsLive(arr[i])) continue;
+        live++;
+        if (held && held.has(i)) continue;
+        m[i] = 1;
+        n++;
       }
       // An all-live board is the omniscient watcher (or visibility_mode
       // "open"): the only ring would trace the board edge, which tells the
       // player nothing. Suppress rather than draw a useless rectangle.
-      return n && n < w * h ? m : null;
+      // Tested on `live`, not `n` — a hold must not make an omniscient
+      // board look partial and bring the useless rectangle back.
+      return n && live < w * h ? m : null;
     };
 
     const frame = mainMapSource === "replay" ? _visionFrame : null;
-    if (frame) {
-      // Rival seats are gated exactly like the replay seat-toggle is: during
-      // a live season a player must not be handed a rival's true LOS, so
-      // outside watch/season-complete only the viewer's own band is built.
+    // v1.53 — every seat's TRUE line of sight is an observer's privilege,
+    // and only an observer's.
+    //
+    // This used to draw all of them whenever the frame carried per-seat
+    // arrays, which meant picking a seat on the transport row changed the
+    // board underneath but not the outlines on top of it: you watched one
+    // House's fog with every House's sight drawn over it, so the one
+    // question the borders exist to answer — what can THIS seat see —
+    // was the one they could not be used for. Worse, three of the four
+    // outlines were information the seat you were watching never had.
+    //
+    // Watching a single seat now falls through to the same path live play
+    // uses: your own sight solid, and a rival's only where it is dashed,
+    // inferred from probes you can actually see, and clipped to ground
+    // you can see for yourself.
+    const omniscient = replayViewSeat === "obs" || replayViewSeat === "both";
+    if (frame && omniscient) {
+      // Still gated like the replay seat-toggle is: during a live season a
+      // player must not be handed a rival's true LOS even in OBS.
       const rivalsOk = opponentSeatVisible();
       for (const seat of _activeSeatsForView()) {
         if (!rivalsOk && seat !== MY_SEAT) continue;
@@ -13313,7 +14140,7 @@
           || frame[`cells_player_${seat}`]
           || (seat === "p1" ? frame.cells_player : null);
         if (!Array.isArray(arr) || !arr.length) continue;
-        const mask = maskOf(arr);
+        const mask = maskOf(arr, seat);
         if (mask) bands.push({ seat, mask, inferred: false });
       }
       if (bands.length) return bands;
@@ -13321,10 +14148,10 @@
 
     // Live play (or a frame with no per-seat arrays): the painted board IS
     // the viewing seat's percept, so its own border comes free.
-    const viewSeat = mainMapSource === "replay" && replayViewSeat !== "obs"
+    const viewSeat = mainMapSource === "replay" && !omniscient
       ? replayViewSeat
       : MY_SEAT;
-    const own = maskOf(cells);
+    const own = maskOf(cells, viewSeat);
     if (own) bands.push({ seat: viewSeat, mask: own, inferred: false });
     // v1.22 — a rival band is clipped to ground you can currently see.
     //
@@ -13336,7 +14163,7 @@
     // see for yourself, which is the honest statement: *this* is where
     // your sight and theirs overlap.
     if (own) {
-      for (const band of _inferredRivalMasks(cells, w, h)) {
+      for (const band of _inferredRivalMasks(cells, w, h, viewSeat)) {
         let n = 0;
         for (let i = 0; i < band.mask.length; i++) {
           band.mask[i] = band.mask[i] & own[i];
@@ -16539,7 +17366,11 @@
         if (f && Array.isArray(f.emp) && f.emp.length) {
           playEmpFx(f, i > 0 ? nightReplayFrames[i - 1] : null);
         }
-        if (f && Array.isArray(f.snap) && f.snap.length) {
+        // v1.53 — the tag counts as well as the payload, because a
+        // season archived before the SNAP columns existed has only the
+        // tag. `playSnapFx` rebuilds what it can and bails if it can't.
+        if (f && ((Array.isArray(f.snap) && f.snap.length)
+            || f.tag === "snap_launch")) {
           playSnapFx(f, i > 0 ? nightReplayFrames[i - 1] : null);
         }
         if (f && Array.isArray(f.mine) && f.mine.length) {
@@ -16776,10 +17607,26 @@
       window._osRenderGreenGrid      = (slots) =>
         _orbitFlashRenderGreenGrid(Array.isArray(slots) ? slots : []);
       window._osGetActiveSeatsList   = () => observedSeats();
-      // Cumulative RED shipped score through (and including) ``throughDay``.
-      // The station score readouts count up to this as the replay plays: at
-      // each night's catapult launch the seat's score_shipped for that day
-      // is folded in. Green (solar jettison) is disposal and adds no score.
+      // Cumulative score through (and including) ``throughDay``: the RED
+      // shipped at each night's catapult launch, MINUS the GREEN charged at
+      // that same orbit. The station score readouts count up to this as the
+      // replay plays.
+      //
+      // v1.51 (BUG-12) — the GREEN debit used to be missing, on the premise
+      // this comment used to state: "solar jettison is disposal and adds no
+      // score". It is not neutral. RULEBOOK §4.7 charges
+      // GREEN_ENDGAME_PENALTY per parcel at the orbit that dumps it, and the
+      // engine always has (``compute_player_score``). So the station ran
+      // high by the season's whole green charge — audited at up to +1000
+      // across the 44 finished seasons in ``seasons/``, on 75 of 88 seats —
+      // and silently reconciled only at the closing snap to ``final``, which
+      // is what "the discount waits for the final night" was.
+      //
+      // The charge was already on the wire beside the shipment it belongs
+      // to: ``jettison.seats[seat].penalty`` on the same per-day blob. It is
+      // a per-day DELTA, which is what this sum wants — do not reach for
+      // ``compute_score_breakdown``'s whole-season figure here, since that
+      // would debit the same parcels again.
       window._osGetCumulativeScore   = (throughDay) => {
         const out = {};
         const cap = Number(throughDay);
@@ -16790,6 +17637,23 @@
           for (const [seat, sb] of Object.entries(seats)) {
             out[seat] = (out[seat] || 0) + (Number(sb && sb.score_shipped) || 0);
           }
+          const dumped = (blob && blob.jettison && blob.jettison.seats) || {};
+          for (const [seat, jb] of Object.entries(dumped)) {
+            out[seat] = (out[seat] || 0) - (Number(jb && jb.penalty) || 0);
+          }
+        }
+        return out;
+      };
+      // The GREEN charged at ONE day's orbit, per seat, so the station can
+      // draw the ``-N green`` line against the night that earned it rather
+      // than only in the season-closing fold.
+      window._osGetDayGreenPenalty   = (day) => {
+        const out = {};
+        const blob = catapultByDay[String(day)];
+        const dumped = (blob && blob.jettison && blob.jettison.seats) || {};
+        for (const [seat, jb] of Object.entries(dumped)) {
+          const n = Number(jb && jb.penalty) || 0;
+          if (n > 0) out[seat] = n;
         }
         return out;
       };
@@ -16833,6 +17697,15 @@
       buildReplayTicks(nightReplayFrames);
       if (newDayLanded && nightReplayFrames.length) {
         replayTickIdx = findFirstTickOfDay(incomingLastDay);
+      }
+      // v1.53 — a FINISHED season opens at its first night, not its last.
+      // Gated on `is_season_complete` so an in-progress game still opens
+      // on the day it is actually on: rewinding a live seat to night one
+      // would hide the board they are being asked to play.
+      if (_openingSession && _openingSession === sessionId
+          && endgameMeta.replayComplete && replayTicks.length) {
+        replayTickIdx = 0;
+        mainMapSource = "replay";
       }
       if (replayTickIdx >= replayTicks.length)
         replayTickIdx = Math.max(0, replayTicks.length - 1);
@@ -17637,11 +18510,17 @@
     const seats = Array.isArray(combatSeats) ? combatSeats : [];
 
     // Kill-feed (attacker→victim). Only show rows with at least one hit.
+    // v1.50 — SNAP now has its own two rows. Its probe kills used to be
+    // counted as EMP kills by the engine, and snap_harvesters was never
+    // listed here at all, so the one weapon most agents actually fire
+    // was the one the kill-feed did not report.
     const kfDefs = [
       ["probes crushed", "probes_crushed"],
       ["probes superseded", "probes_superseded"],
       ["EMP\u2019d probes", "emp_probes"],
+      ["SNAPped probes", "snap_probes"],
       ["EMP\u2019d harvesters", "emp_harvesters"],
+      ["SNAPped harvesters", "snap_harvesters"],
       ["chaff jams", "chaff_jams"],
       ["harvesters damaged", "harv_damaged"],
       ["harvesters lost (your chaff)", "harv_lost_chaff"],
@@ -17662,6 +18541,10 @@
       : "";
 
     // Personal (non-attributed) operations.
+    // v1.52 (BUG-13) — the weapons moved out of here into their own
+    // ordnance block. They were the only rows whose ZERO mattered, and
+    // this list hides zeroes, so "fired none of the three you bought"
+    // rendered as no rows at all.
     const perDefs = [
       ["probes launched", "probes_launched"],
       ["harvesters dropped", "harvesters_dropped"],
@@ -17669,8 +18552,6 @@
       ["red harvested", "red_harvested"],
       ["green harvested", "green_harvested"],
       ["blue harvested", "blue_harvested"],
-      ["EMPs fired", "emps_fired"],
-      ["chaff fired", "chaff_fired"],
       ["mines laid", "mines_laid"],
       ["moves cancelled", "moves_cancelled"],
     ];
@@ -17683,6 +18564,61 @@
       ? `<div class="eg-tally-rows eg-tally-rows--sub">
            <div class="eg-kf-head dim">// operations</div>
            ${perRows}
+         </div>`
+      : "";
+
+    // v1.52 (BUG-13) — ordnance: FIRED against BOUGHT, off the engine's
+    // firing ledger rather than a tally rebuilt from replay frames.
+    // Shown as a pair on purpose: the card used to print fires only, so
+    // a rack bought and never used was indistinguishable from never
+    // having bought one, and SNAP — the cheapest weapon and the one the
+    // room fires most — had no row at all.
+    // Kinds come from the payload, not a literal, so a season that
+    // prices a weapon this build has never heard of still reports it.
+    const ord = p.ordnance || {};
+    const ordLabel = { snap: "SNAP", emp: "EMP", chaff: "CHAFF", mine: "MINE" };
+    const ordRows = Object.keys(ord)
+      .filter((k) => (Number(ord[k].bought) || 0) > 0
+                  || (Number(ord[k].fired) || 0) > 0)
+      .map((k) => {
+        const f = Number(ord[k].fired) || 0;
+        const b = Number(ord[k].bought) || 0;
+        const idle = b - f;
+        // Unfired ordnance is the interesting failure, so mark it.
+        const cls = idle > 0 ? " eg-trow--neg" : "";
+        const note = idle > 0 ? ` <span class="dim">(${idle} unfired)</span>` : "";
+        return `<div class="eg-trow${cls}" title="fired ${f} of ${b} bought">`
+          + `<span>${egEsc(ordLabel[k] || k.toUpperCase())}</span>`
+          + `<span>${f} / ${b}${note}</span></div>`;
+      }).join("");
+    const ordnanceHtml = ordRows
+      ? `<div class="eg-tally-rows eg-tally-rows--sub">
+           <div class="eg-kf-head dim">// ordnance <span class="dim">fired / bought</span></div>
+           ${ordRows}
+         </div>`
+      : "";
+
+    // v1.52 (BUG-13) — what was done TO this seat. Every one of these
+    // was already computed in the payload's ``combat`` block and thrown
+    // away: the card was attacker-side only, so a season could cost you
+    // three harvesters and the results screen would never say so.
+    const cb = p.combat || {};
+    const lossDefs = [
+      ["harvesters lost", "harvesters_lost"],
+      ["harvesters smothered by EMP", "harvesters_emped"],
+      ["harvesters damaged", "harvesters_damaged"],
+      ["probes lost", "probes_lost"],
+    ];
+    const lossRows = lossDefs
+      .filter(([, key]) => Number(cb[key] || 0) > 0)
+      .map(([label, key]) =>
+        `<div class="eg-trow eg-trow--neg"><span>${label}</span>`
+        + `<span>${Number(cb[key] || 0)}</span></div>`)
+      .join("");
+    const lossesHtml = lossRows
+      ? `<div class="eg-tally-rows eg-tally-rows--sub">
+           <div class="eg-kf-head dim">// losses</div>
+           ${lossRows}
          </div>`
       : "";
 
@@ -17712,6 +18648,8 @@
           <div class="eg-trow"><span>green still held</span><span>${p.green_held}</span></div>
         </div>
         ${killfeedHtml}
+        ${ordnanceHtml}
+        ${lossesHtml}
         ${personalHtml}
       </div>`;
   }
@@ -17923,6 +18861,14 @@
     if (mainMapSource !== "live") return;
     if (complete) {
       updateEndgameReopen(true);
+      // v1.53 — this season was already over when we opened it, so there
+      // is nothing to announce: it opens at night one and plays forward.
+      // `liveWasComplete` is set on the way out so the false->true
+      // transition is consumed here and cannot fire a beat later.
+      if (_openingSession && _openingSession === sessionId) {
+        endgameMeta.liveWasComplete = true;
+        return;
+      }
       // v1.30 — HOLD THE FINALE UNTIL THE LAST NIGHT HAS BEEN ANIMATED.
       //
       // Retiring the terminal settlement orbit removed an accidental
@@ -20371,7 +21317,12 @@
         height: j.height,
         cells: j.cells || [],
       };
-      if (mainMapSource === "live" && !_suppressLiveReveal) {
+      // v1.53 — `_bootHoldsBoard` joins `_suppressLiveReveal` here for the
+      // same reason it exists: the boot reveal is mid-flight across the
+      // whole grid, and `paintPlayerMap` would replace every cell that is
+      // part-way through its animation. The payload is still cached above,
+      // so the next ordinary poll paints it.
+      if (mainMapSource === "live" && !_suppressLiveReveal && !_bootHoldsBoard) {
         // v1.20 — lifting the cutoffs is part of PAINTING live, not of
         // fetching. Doing it unconditionally let a poll landing during
         // the night cinematic reset them to "show everything", so a seam
@@ -20557,7 +21508,9 @@
       // ``_suppressLiveReveal``, and that flag can only be set correctly
       // once we know which night the server is on — running the two
       // concurrently made it a race, and the race is the bug below.
+      _bootStep(0.18, "handshake");
       await refreshStatus();
+      _bootStep(0.42, "session");
       // v1.24 — A NIGHT THAT HAS RESOLVED BUT NOT YET ANIMATED OWNS THE
       // BOARD, whether or not THIS call is the one that will animate it.
       //
@@ -20583,7 +21536,9 @@
         refreshObserverMap(),
         refreshSoloPlayerMap(),
       ]);
+      _bootStep(0.72, "percept");
       info = await refreshNightReplay({ playFx: false });
+      _bootStep(0.94, "season");
       // v1.26 — THE END STATE MUST NEVER PRECEDE THE ANIMATION.
       //
       // The complaint, and it is a mood one rather than a correctness
@@ -21413,6 +22368,9 @@
   async function newGame(opts) {
     newGameBtn.disabled = true;
     phaseLine.textContent = "# spawning session…";
+    // v1.53 — a spawn is a boot. Put the curtain back over the idle
+    // screen (or the game being replaced) so the new board arrives whole.
+    _bootRearm();
     resetSoloFormForNewGame();
     if (errSoloEl) errSoloEl.hidden = true;
     try {
@@ -21478,6 +22436,7 @@
       _lastCinematicDay = 0;
       await pullAllMaps({ claimCinematic: true });
       syncMobileOrdersBar();
+      _bootReady();
       // v0.9.12 — a multi-human spawn surfaces shareable seat links + turns
       // on cross-browser sync. A solo game (one human) is a no-op here, so
       // the single-browser flow is unchanged.
@@ -21495,6 +22454,7 @@
       phaseLine.textContent = `! ${e.message || e}`;
       if (mapPlayer) paintPlaceholder(mapPlayer, "# error");
       paintPlaceholder(mapObserver, "# error");
+      _bootDismiss();
     } finally {
       newGameBtn.disabled = false;
     }
@@ -21697,6 +22657,7 @@
     if (phaseLine) phaseLine.textContent = `# loading season…`;
     sessionId = id;
     _lastCinematicDay = 0;
+    _openingSession = id;  // v1.53 — see the note on the declaration
     try {
       await pullAllMaps({ claimCinematic: true });
       // v1.22 — clear it explicitly. The status poller no longer rewrites
@@ -21705,9 +22666,15 @@
       if (phaseLine) phaseLine.textContent = "";
       // Default tab in watcher mode is REPLAY — that's the whole point.
       activateCcTab("replay");
+      _bootReady();
     } catch (e) {
       if (phaseLine) phaseLine.textContent = `! ${e?.message || e}`;
       if (mapPlayer) paintPlaceholder(mapPlayer, "# error loading season");
+      // v1.53 — a failed load must still take the curtain down, or the
+      // error message is behind black and the page looks hung.
+      _bootDismiss();
+    } finally {
+      _openingSession = null;
     }
   }
 
@@ -22288,6 +23255,7 @@
       sessionId = null;
       if (phaseLine) phaseLine.textContent = `! join failed · ${e?.message || e}`;
       if (mapPlayer) paintPlaceholder(mapPlayer, "# session not found");
+      _bootDismiss();
       return;
     }
     const players = Array.isArray(st.players) ? st.players : [];
@@ -22301,6 +23269,11 @@
       players.includes(MY_SEAT) &&
       String(agents[MY_SEAT] || "human").toLowerCase() === "human";
     if (!seatOk) {
+      // v1.53 — the curtain has to go before the picker does, because the
+      // picker is a decision and the curtain outranks every overlay on the
+      // page. The reveal still runs afterwards; it just plays onto a page
+      // the joiner has already seen.
+      _bootDismiss();
       const picked = await promptSeatPicker(humans.length ? humans : players);
       if (!picked) {
         if (phaseLine) phaseLine.textContent = "# pick a seat to join";
@@ -22310,16 +23283,21 @@
     } else {
       applySeatIdentity();
     }
+    _openingSession = id;  // v1.53 — see the note on the declaration
     try {
       // Joining an in-progress game: whatever night already happened is
       // history for this seat, not something to animate at them on arrival.
       await pullAllMaps({ claimCinematic: true });
       activateCcTab(String(st.phase) === "orbit" ? "orbit" : "orders");
       syncMobileOrdersBar();
+      _bootReady();
     } catch (e) {
       if (phaseLine) phaseLine.textContent = `! ${e?.message || e}`;
       if (mapPlayer) paintPlaceholder(mapPlayer, "# error joining session");
+      _bootDismiss();
       return;
+    } finally {
+      _openingSession = null;
     }
     startLiveSync();
   }
@@ -24573,6 +25551,7 @@
     // v0.9.12 — a friend opened a shareable seat link. Bind into the
     // existing session as a live, playable seat (fog-of-war percept,
     // ORDERS/ORBIT tabs, TRANSMIT) — NOT the omniscient watcher.
+    _bootArm();  // v1.53
     paintPlaceholder(mapPlayer, "# joining session…");
     paintPlaceholder(mapObserver, "# full map · GRAPHICS tab");
     bootJoinMode();
@@ -24581,10 +25560,15 @@
     // boot directly into the season-loading flow. The picker bar
     // unhides itself inside ``bootWatcherMode`` so the user can
     // switch seasons without a manual reload.
+    _bootArm();  // v1.53
     paintPlaceholder(mapPlayer, "# loading season…");
     paintPlaceholder(mapObserver, "# loading season…");
     bootWatcherMode();
   } else {
+    // v1.53 — the idle landing screen has nothing to load, so the curtain
+    // comes straight down. It is only parked, not spent: NEW GAME (below,
+    // or from the launcher) re-arms it.
+    _bootDismiss();
     paintPlaceholder(mapPlayer, "# start NEW GAME");
     paintPlaceholder(mapObserver, "# full map · GRAPHICS tab");
     // Landing-page "Multiplayer" deep-link: ?new=multi auto-opens the

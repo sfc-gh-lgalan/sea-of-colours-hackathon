@@ -378,13 +378,21 @@ _KIT = """
 }
 """
 
-# Runs at document start, before any app script. Two jobs, both of which
+# Runs at document start, before any app script. Three jobs, all of which
 # have to happen BEFORE the first paint or they end up on film: mute the
 # tutorial modal (these films play inside it — it must never film itself),
-# and drop a black curtain over the boot. Without the curtain the first
-# second of every film is a white flash and a half-built UI.
+# switch off the game's own boot sequence, and drop a black curtain over
+# the boot. Without the curtain the first second of every film is a white
+# flash and a half-built UI.
+#
+# v1.53 — the boot opt-out is here rather than as `?boot=0` on each URL
+# because every rig in this folder funnels through this init script and
+# almost none of them share a URL builder. The game's boot curtain would
+# otherwise be a second curtain under this one, and its fog-and-teleport
+# reveal would land in the opening seconds of every shot.
 _CURTAIN_INIT = """
 (() => {
+  try { window.__SOC_NO_BOOT__ = true; } catch (e) {}
   try { localStorage.setItem('soc.tutorial.muted.v1', '1'); } catch (e) {}
   const paint = () => {
     // At true document start there is no documentElement yet on the
