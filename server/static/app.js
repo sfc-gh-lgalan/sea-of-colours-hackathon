@@ -11424,7 +11424,13 @@
         // since probe echoes are already cleared when the EMP frame is baked).
         if (!reduceMotionMq.matches) {
           const refFrame = prevFrame || fEmp;
-          for (const ev of (Array.isArray(fEmp?.emp) ? fEmp.emp : [])) {
+          // v1.57 — the kills come off the LAUNCH frame. `fEmp` is the
+          // newest frame painted while the salvo flew, which is right for
+          // the cloud and wrong here: the next hour's frame carries no
+          // `emp` events, and the station lead plus the flight outlasts
+          // the 620ms hour cadence, so on autoplay the crosses were
+          // dropped on almost every salvo.
+          for (const ev of (Array.isArray(frame?.emp) ? frame.emp : [])) {
             if (!Array.isArray(ev?.destroyed_probes)) continue;
             for (const dp of ev.destroyed_probes) {
               const at = Array.isArray(dp?.at) ? dp.at : null;
