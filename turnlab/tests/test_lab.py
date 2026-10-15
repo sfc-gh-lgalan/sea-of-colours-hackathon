@@ -398,6 +398,73 @@ def test_a_rack_cannot_overfill_a_hoard():
     assert len(blob["hoard_squares"]["p1"]) <= HOARD_CAPACITY
 
 
+def test_arming_also_corrects_the_inherited_arsenal_history():
+    """The clone must hold ONE answer to "what is this seat carrying".
+
+    A clone inherits ``station_obs_by_day`` from the season it was cut
+    from, and each entry carries that season's public arsenal reading
+    (§4.9.8). Arming wrote ``weapon_stock`` and left those alone, so
+    the two disagreed — and the station bar picks between them on the
+    scrubber. Live it drew the rack; one nudge of the cursor and it
+    drew the source season's instead. The wrong number was a plausible
+    one, which is why this went unnoticed: a seat opened with one SNAP
+    read as three pips of ordnance while the orbit panel still offered
+    the SNAP.
+    """
+    from turnlab import arms
+
+    from sea_of_colours.game.weapons import (
+        BLUE_COST_BY_KIND,
+        WEAPONISED_BLUE_CAP,
+    )
+
+    blob = {
+        "weapon_stock": {},
+        "hoard_squares": {},
+        "weapon_blue_costs": dict(BLUE_COST_BY_KIND),
+        "weapon_blue_cap": WEAPONISED_BLUE_CAP,
+        "station_obs_by_day": {
+            "1": {"pre":  {"p1": {"arms": {"blue": 300, "cap": 600}},
+                           "p2": {"arms": {"blue": 200, "cap": 600}}}},
+            "2": {"post": {"p1": {"arms": {"blue": 500, "cap": 600}}}},
+        },
+    }
+    arms.arm(blob, "p1", "snap")
+
+    want = BLUE_COST_BY_KIND["snap"]
+    by_day = blob["station_obs_by_day"]
+    assert by_day["1"]["pre"]["p1"]["arms"]["blue"] == want
+    assert by_day["2"]["post"]["p1"]["arms"]["blue"] == want
+    # The seat that was not armed keeps its own history, which for it
+    # is genuinely true: the clone IS that season up to the freeze.
+    assert by_day["1"]["pre"]["p2"]["arms"]["blue"] == 200
+
+
+def test_arming_does_not_invent_an_arsenal_on_a_weapons_off_season():
+    """No ``arms`` key means the season published no arsenal at all.
+
+    Writing one in would put ordnance on the public readout of a board
+    whose engine cannot fire it — a different lie from the one above,
+    and a worse one.
+    """
+    from turnlab import arms
+
+    from sea_of_colours.game.weapons import (
+        BLUE_COST_BY_KIND,
+        WEAPONISED_BLUE_CAP,
+    )
+
+    blob = {
+        "weapon_stock": {},
+        "hoard_squares": {},
+        "weapon_blue_costs": dict(BLUE_COST_BY_KIND),
+        "weapon_blue_cap": WEAPONISED_BLUE_CAP,
+        "station_obs_by_day": {"1": {"pre": {"p1": {"fullness": {}}}}},
+    }
+    arms.arm(blob, "p1", "snap")
+    assert "arms" not in blob["station_obs_by_day"]["1"]["pre"]["p1"]
+
+
 def test_an_unknown_rack_is_refused_by_name():
     from turnlab import arms
 

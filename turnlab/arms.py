@@ -162,7 +162,53 @@ def arm(blob: MutableMapping[str, Any], seat: str, rack_id: str) -> Rack:
     stock[str(seat)] = {kind: int(rack.counts.get(kind, 0)) for kind in prices}
     if rack.blue:
         _give_blue(blob, str(seat), rack.blue)
+    _restamp_public_arsenal(blob, str(seat), held, cap)
     return rack
+
+
+def _restamp_public_arsenal(
+    blob: MutableMapping[str, Any], seat: str, held: int, cap: int,
+) -> None:
+    """Make the clone's frozen station history agree with the new rack.
+
+    A clone inherits ``station_obs_by_day`` from the season it was cut
+    from, and every entry carries that season's public arsenal reading
+    (§4.9.8). Arming used to write ``weapon_stock`` and leave those
+    alone, so a lab run held two contradictory answers to "what is this
+    seat carrying" — and which one the UI drew depended on the
+    scrubber. Live, the station bar showed the rack; nudge the cursor
+    and it fell back to the per-day snapshot and quietly drew the
+    *source season's* rack instead. That failure is nastier than a
+    blank bar, because the wrong number is a plausible one: a seat
+    opened with one SNAP read as three pips of ordnance it did not
+    have, on a board where the orbit panel was still offering the SNAP.
+
+    Rewriting inherited history is not the liberty it sounds like. A
+    clone is a throwaway with no past of its own — every day in here
+    belongs to another game — and what the lab poses is "this seat is
+    holding this rack, on this night". Making the scenery say so is
+    what "opened armed" has to mean if the board is to be readable.
+    Any consumer of the snapshots is fixed by this, not just the bar.
+    """
+    by_day = blob.get("station_obs_by_day")
+    if not isinstance(by_day, MutableMapping):
+        return
+    for by_phase in by_day.values():
+        if not isinstance(by_phase, MutableMapping):
+            continue
+        for by_seat in by_phase.values():
+            if not isinstance(by_seat, MutableMapping):
+                continue
+            obs = by_seat.get(seat)
+            if not isinstance(obs, MutableMapping):
+                continue
+            # Only where the season published an arsenal at all. A
+            # season with weapons off has no ``arms`` key, and inventing
+            # one would put ordnance on a board that cannot fire it.
+            arms = obs.get("arms")
+            if isinstance(arms, MutableMapping):
+                arms["blue"] = int(held)
+                arms["cap"] = int(cap)
 
 
 def _give_blue(blob: MutableMapping[str, Any], seat: str, purity_total: int) -> None:
